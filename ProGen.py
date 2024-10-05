@@ -4,6 +4,8 @@ import subprocess
 import sys
 import psutil
 import time
+import re
+from colorama import Fore, Style, init
 
 processes = {}
 
@@ -80,41 +82,77 @@ def open_terminal(pid):
         print(f"No process found with PID {pid}.")
 
 
+init(autoreset=True)
+
+def show_help():
+    help_text = f"""
+    {Fore.CYAN}Available Commands:
+    {Fore.GREEN}- generate [timeout]     {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
+    {Fore.GREEN}- terminal <pid>         {Fore.WHITE}: Open a terminal for the process with the given PID.
+    {Fore.GREEN}- show <pid>             {Fore.WHITE}: Show details of the process with the given PID.
+    {Fore.GREEN}- list                   {Fore.WHITE}: List all running processes.
+    {Fore.GREEN}- exit                   {Fore.WHITE}: Exit the program.
+    {Fore.GREEN}- help                   {Fore.WHITE}: Show this help text.
+    """
+    print(help_text)
+
 
 def main():
+    generate_pattern = re.compile(r"^generate(?:\s+(\d+))?$")
+    terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
+    show_pattern = re.compile(r"^show\s+(\d+)$")
+    
+    print(f"{Fore.YELLOW}Welcome! Type '{Fore.GREEN}help{Fore.YELLOW}' to see available commands.")
+    show_help()
+    
     while True:
-        user_input = input("Enter command: ")
+        user_input = input(f"{Fore.LIGHTBLUE_EX}Enter command: {Style.RESET_ALL}").strip()
 
-        if user_input.startswith("generate"):
-            parts = user_input.split()
-            if len(parts) > 1:
-                try:
-                    timeout = int(parts[1])
-                    spawn_process(timeout=timeout)
-                except ValueError:
-                    print("Invalid timeout. Please provide a valid integer.")
+        match = generate_pattern.match(user_input)
+        if match:
+            timeout = match.group(1)
+            if timeout:
+                print(f"{Fore.GREEN}Spawning a process with timeout {timeout} seconds...")
+                spawn_process(timeout=int(timeout))
             else:
-                spawn_process()  
-        elif user_input.startswith("terminal "):
-            _, pid_str = user_input.split()
+                print(f"{Fore.GREEN}Spawning a process with default timeout...")
+                spawn_process()
+            continue
+
+        match = terminal_pattern.match(user_input)
+        if match:
             try:
-                pid = int(pid_str)
+                pid = int(match.group(1))
+                print(f"{Fore.GREEN}Opening terminal for PID {pid}...")
                 open_terminal(pid)
             except ValueError:
-                print("Invalid PID.")
-        elif user_input.startswith("show "):
-            _, pid_str = user_input.split()
+                print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
+            continue
+
+        match = show_pattern.match(user_input)
+        if match:
             try:
-                pid = int(pid_str)
+                pid = int(match.group(1))
+                print(f"{Fore.GREEN}Showing details for PID {pid}...")
                 process_details(pid)
             except ValueError:
-                print("Invalid PID.")
-        elif user_input == "list":
+                print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
+            continue
+
+        if user_input == "list":
+            print(f"{Fore.CYAN}Listing all processes...")
             list_processes()
-        elif user_input == "exit":
+            continue
+
+        if user_input == "exit":
+            print(f"{Fore.MAGENTA}Exiting... Goodbye!")
             exit(0)
-        else:
-            print("Unknown command. Use 'generate' to spawn a process or 'terminal <pid>' to open a terminal.")
+
+        if user_input == "help":
+            show_help()
+            continue
+
+        print(f"{Fore.RED}Unknown command. Type '{Fore.GREEN}help{Fore.RED}' for available commands.")
 
 if __name__ == "__main__":
     main()
