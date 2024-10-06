@@ -7,7 +7,6 @@ import time
 import re
 from colorama import Fore, Style, init
 from multiprocessing import shared_memory
-import sched
 
 processes = {}
 SCHED_EXT = 7
@@ -20,12 +19,14 @@ def process_details(pid):
             cpu_times = proc.cpu_times()
             cpu_percent = proc.cpu_percent(interval=0.1)
             cpu_affinity = proc.cpu_affinity()
+            current_cpu = proc.cpu_num()
             memory_info = proc.memory_info()
 
             print(f"PID: {pid}")
             print(f"Status: {status}")
             print(f"CPU Times: {cpu_times}")
             print(f"CPU Percent: {cpu_percent}%")
+            print(f"Current CPU: {current_cpu}")
             print(f"CPU Affinity (CPUs it can run on): {cpu_affinity}")
             print(f"Memory Info: {memory_info}")
             print(f"Elapsed Time Since Creation (seconds): {time.time() - proc.create_time()}")
