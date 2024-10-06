@@ -5,6 +5,7 @@ import sys
 import psutil
 import time
 import re
+import signal
 from colorama import Fore, Style, init
 from multiprocessing import shared_memory
 
@@ -116,6 +117,19 @@ def create_shared_memory_with_file(file_path):
     print(f"Created shared memory '{shm.name}' with size {shm.size} bytes and stored the contents of {file_path}.")
     return shm
 
+def pause_resume(pid, action):
+    if pid in processes:
+        if action == 'pause':
+            os.kill(pid, signal.SIGUSR1)
+            print(f"Sent SIGUSR1 (pause) to process {pid}.")
+        elif action == 'resume':
+            os.kill(pid, signal.SIGUSR2)
+            print(f"Sent SIGUSR2 (resume) to process {pid}.")
+        else:
+            print(f"{Fore.RED}Invalid action: {action}. Use 'pause' or 'resume'.")
+    else:
+        print(f"No process found with PID {pid}.")
+
 init(autoreset=True)
 
 def show_help():
@@ -126,6 +140,7 @@ def show_help():
     {Fore.GREEN}- show <pid>                        {Fore.WHITE}: Show details of the process with the given PID.
     {Fore.GREEN}- change_class <pid>                {Fore.WHITE}: Change scheduling policy of the process to SCX.
     {Fore.GREEN}- select_file <path>                {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
+    {Fore.GREEN}- pause_resume <pid> <pause/resume> {Fore.WHITE}: Pause or resume the process with the given PID.
     {Fore.GREEN}- list                              {Fore.WHITE}: List all running processes.
     {Fore.GREEN}- kill <pid>                        {Fore.WHITE}: Kill the process with the given PID.
     {Fore.GREEN}- kill_all                          {Fore.WHITE}: Kill all spawned processes.
@@ -156,6 +171,7 @@ def main():
     select_file_pattern = re.compile(r"^select_file\s+(.*)$")
     kill_pattern = re.compile(r"^kill\s+(\d+)$")
     kill_all_pattern = re.compile(r"^kill_all$")
+    pause_resume_pattern = re.compile(r"^pause_resume\s+(\d+)\s+(pause|resume)$")
 
     print(f"{Fore.YELLOW}Welcome! Type '{Fore.GREEN}help{Fore.YELLOW}' to see available commands.")
     show_help()
@@ -226,6 +242,16 @@ def main():
             if match:
                 print(f"{Fore.GREEN}Killing all spawned processes...")
                 kill_all_processes()
+                continue
+
+            match = pause_resume_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    action = match.group(2)
+                    pause_resume(pid, action)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID or action. Please enter a valid integer and action.")
                 continue
 
             if user_input == "list":
