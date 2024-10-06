@@ -48,17 +48,29 @@ def list_processes():
     else:
         print("No processes spawned yet.")
 
-def spawn_process(timeout: int=None):
+def change_process_policy(pid):
+    if pid in processes:
+        try:
+            param = os.sched_param(0)
+            os.sched_setscheduler(pid, SCHED_EXT, param)
+            print(f"Scheduler class set to SCHED_EXT for process {pid}")
+        except OSError as e:
+            print(f"Failed to set scheduler: {e}")
+    else:
+        print(f"No process found with PID {pid}.")
+
+def spawn_process(timeout: int=None, set_sched_class: bool=True):
     command = ['./a.out'] if not timeout else ['./a.out', str(timeout)]
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(command, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd)
     pid = process.pid
-    try:
-        param = os.sched_param(0)
-        os.sched_setscheduler(process.pid, SCHED_EXT, param)
-        print(f"Scheduler class set to SCHED_EXT for process {process.pid}")
-    except OSError as e:
-        print(f"Failed to set scheduler: {e}")
+    if set_sched_class:
+        try:
+            param = os.sched_param(0)
+            os.sched_setscheduler(process.pid, SCHED_EXT, param)
+            print(f"Scheduler class set to SCHED_EXT for process {process.pid}")
+        except OSError as e:
+            print(f"Failed to set scheduler: {e}")
     processes[pid] = (process, master_fd)
     print(f"Spawned process with PID {pid}.")
     return pid
@@ -109,15 +121,16 @@ init(autoreset=True)
 def show_help():
     help_text = f"""
     {Fore.CYAN}Available Commands:
-    {Fore.GREEN}- generate [timeout]     {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
-    {Fore.GREEN}- terminal <pid>         {Fore.WHITE}: Open a terminal for the process with the given PID.
-    {Fore.GREEN}- show <pid>             {Fore.WHITE}: Show details of the process with the given PID.
-    {Fore.GREEN}- select_file <path>     {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
-    {Fore.GREEN}- list                   {Fore.WHITE}: List all running processes.
-    {Fore.GREEN}- kill <pid>             {Fore.WHITE}: Kill the process with the given PID.
-    {Fore.GREEN}- kill_all               {Fore.WHITE}: Kill all spawned processes.
-    {Fore.GREEN}- exit                   {Fore.WHITE}: Exit the program.
-    {Fore.GREEN}- help                   {Fore.WHITE}: Show this help text.
+    {Fore.GREEN}- generate [timeout] [noclass]      {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
+    {Fore.GREEN}- terminal <pid>                    {Fore.WHITE}: Open a terminal for the process with the given PID.
+    {Fore.GREEN}- show <pid>                        {Fore.WHITE}: Show details of the process with the given PID.
+    {Fore.GREEN}- change_class <pid>                {Fore.WHITE}: Change scheduling policy of the process to SCX.
+    {Fore.GREEN}- select_file <path>                {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
+    {Fore.GREEN}- list                              {Fore.WHITE}: List all running processes.
+    {Fore.GREEN}- kill <pid>                        {Fore.WHITE}: Kill the process with the given PID.
+    {Fore.GREEN}- kill_all                          {Fore.WHITE}: Kill all spawned processes.
+    {Fore.GREEN}- exit                              {Fore.WHITE}: Exit the program.
+    {Fore.GREEN}- help                              {Fore.WHITE}: Show this help text.
     """
     print(help_text)
 
@@ -136,9 +149,10 @@ def kill_all_processes():
     print("Killed all spawned processes.")
 
 def main():
-    generate_pattern = re.compile(r"^generate(?:\s+(\d+))?$")
+    generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
     show_pattern = re.compile(r"^show\s+(\d+)$")
+    change_sched_class_pattern = re.compile(r"^change_class\s+(\d+)$")
     select_file_pattern = re.compile(r"^select_file\s+(.*)$")
     kill_pattern = re.compile(r"^kill\s+(\d+)$")
     kill_all_pattern = re.compile(r"^kill_all$")
@@ -153,12 +167,13 @@ def main():
             match = generate_pattern.match(user_input)
             if match:
                 timeout = match.group(1)
+                no_class = "no-class" in user_input
                 if timeout:
                     print(f"{Fore.GREEN}Spawning a process with timeout {timeout} seconds...")
-                    spawn_process(timeout=int(timeout))
+                    spawn_process(timeout=int(timeout), set_sched_class=not no_class)
                 else:
                     print(f"{Fore.GREEN}Spawning a process with default timeout...")
-                    spawn_process()
+                    spawn_process(set_sched_class=not no_class)
                 continue
 
             match = terminal_pattern.match(user_input)
@@ -177,6 +192,15 @@ def main():
                     pid = int(match.group(1))
                     print(f"{Fore.GREEN}Showing details for PID {pid}...")
                     process_details(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
+                continue
+
+            match = change_sched_class_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    change_process_policy(pid)
                 except ValueError:
                     print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
                 continue
