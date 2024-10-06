@@ -60,6 +60,19 @@ def change_process_policy(pid):
     else:
         print(f"No process found with PID {pid}.")
 
+
+def set_affinity(pid, cpus):
+    if pid in processes:
+        try:
+            proc = psutil.Process(pid)
+            proc.cpu_affinity(cpus)
+            print(f"Set CPU affinity for process {pid} to CPUs: {cpus}")
+        except psutil.NoSuchProcess:
+            print(f"Process with PID {pid} does not exist.")
+    else:
+        print(f"No process found with PID {pid}.")
+
+
 def spawn_process(timeout: int=None, set_sched_class: bool=True):
     command = ['./a.out'] if not timeout else ['./a.out', str(timeout)]
     master_fd, slave_fd = pty.openpty()
@@ -135,17 +148,18 @@ init(autoreset=True)
 def show_help():
     help_text = f"""
     {Fore.CYAN}Available Commands:
-    {Fore.GREEN}- generate [timeout] [noclass]      {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
-    {Fore.GREEN}- terminal <pid>                    {Fore.WHITE}: Open a terminal for the process with the given PID.
-    {Fore.GREEN}- show <pid>                        {Fore.WHITE}: Show details of the process with the given PID.
-    {Fore.GREEN}- change_class <pid>                {Fore.WHITE}: Change scheduling policy of the process to SCX.
-    {Fore.GREEN}- select_file <path>                {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
-    {Fore.GREEN}- pause_resume <pid> <pause/resume> {Fore.WHITE}: Pause or resume the process with the given PID.
-    {Fore.GREEN}- list                              {Fore.WHITE}: List all running processes.
-    {Fore.GREEN}- kill <pid>                        {Fore.WHITE}: Kill the process with the given PID.
-    {Fore.GREEN}- kill_all                          {Fore.WHITE}: Kill all spawned processes.
-    {Fore.GREEN}- exit                              {Fore.WHITE}: Exit the program.
-    {Fore.GREEN}- help                              {Fore.WHITE}: Show this help text.
+    {Fore.GREEN}- generate [timeout] [noclass]           {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
+    {Fore.GREEN}- terminal <pid>                         {Fore.WHITE}: Open a terminal for the process with the given PID.
+    {Fore.GREEN}- show <pid>                             {Fore.WHITE}: Show details of the process with the given PID.
+    {Fore.GREEN}- change_class <pid>                     {Fore.WHITE}: Change scheduling policy of the process to SCX.
+    {Fore.GREEN}- set_affinity <pid> <cpu list>          {Fore.WHITE}: Set the CPU affinity for the process with the given PID to the specified list of CPUs.
+    {Fore.GREEN}- select_file <path>                     {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
+    {Fore.GREEN}- pause_resume <pid> <pause/resume>      {Fore.WHITE}: Pause or resume the process with the given PID.
+    {Fore.GREEN}- list                                   {Fore.WHITE}: List all running processes.
+    {Fore.GREEN}- kill <pid>                             {Fore.WHITE}: Kill the process with the given PID.
+    {Fore.GREEN}- kill_all                               {Fore.WHITE}: Kill all spawned processes.
+    {Fore.GREEN}- exit                                   {Fore.WHITE}: Exit the program.
+    {Fore.GREEN}- help                                   {Fore.WHITE}: Show this help text.
     """
     print(help_text)
 
@@ -172,6 +186,7 @@ def main():
     kill_pattern = re.compile(r"^kill\s+(\d+)$")
     kill_all_pattern = re.compile(r"^kill_all$")
     pause_resume_pattern = re.compile(r"^pause_resume\s+(\d+)\s+(pause|resume)$")
+    affinity_pattern = re.compile(r"^set_affinity\s+(\d+)\s+([\d,]+)$")
 
     print(f"{Fore.YELLOW}Welcome! Type '{Fore.GREEN}help{Fore.YELLOW}' to see available commands.")
     show_help()
@@ -190,6 +205,17 @@ def main():
                 else:
                     print(f"{Fore.GREEN}Spawning a process with default timeout...")
                     spawn_process(set_sched_class=not no_class)
+                continue
+
+            match = affinity_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    cpus = list(map(int, match.group(2).split(',')))
+                    print(f"{Fore.GREEN}Setting CPU affinity for PID {pid} to CPUs {cpus}...")
+                    set_affinity(pid, cpus)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid input. Please enter a valid PID and CPU list.")
                 continue
 
             match = terminal_pattern.match(user_input)
