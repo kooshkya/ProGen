@@ -6,9 +6,11 @@ import psutil
 import time
 import re
 from colorama import Fore, Style, init
+from multiprocessing import shared_memory
+import sched
 
 processes = {}
-
+SCHED_EXT = 7
 
 def process_details(pid):
     if pid in processes:
@@ -45,16 +47,20 @@ def list_processes():
     else:
         print("No processes spawned yet.")
 
-
 def spawn_process(timeout: int=None):
     command = ['./a.out'] if not timeout else ['./a.out', str(timeout)]
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(command, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd)
-    
     pid = process.pid
+    try:
+        param = os.sched_param(0)
+        os.sched_setscheduler(process.pid, SCHED_EXT, param)
+        print(f"Scheduler class set to SCHED_EXT for process {process.pid}")
+    except OSError as e:
+        print(f"Failed to set scheduler: {e}")
     processes[pid] = (process, master_fd)
     print(f"Spawned process with PID {pid}.")
-
+    return pid
 
 def open_terminal(pid):
     if pid in processes:
@@ -73,7 +79,7 @@ def open_terminal(pid):
                 if input_command.lower() == 'exit':
                     break
                 os.write(master_fd, (input_command + "\n").encode('utf-8'))
-                
+
         except KeyboardInterrupt:
             print("\nExiting terminal.")
         except Exception as e:
@@ -81,6 +87,21 @@ def open_terminal(pid):
     else:
         print(f"No process found with PID {pid}.")
 
+def create_shared_memory_with_file(file_path):
+    pid = spawn_process(-1)
+
+    if not os.path.isfile(file_path):
+        print(f"{Fore.RED}Error: File {file_path} does not exist.{Style.RESET_ALL}")
+        return
+    
+    shm = shared_memory.SharedMemory(create=True, size=os.path.getsize(file_path), name=f"shm_{pid}")
+
+    with open(file_path, 'rb') as f:
+        data = f.read()
+        shm.buf[:len(data)] = data
+    
+    print(f"Created shared memory '{shm.name}' with size {shm.size} bytes and stored the contents of {file_path}.")
+    return shm
 
 init(autoreset=True)
 
@@ -90,69 +111,118 @@ def show_help():
     {Fore.GREEN}- generate [timeout]     {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
     {Fore.GREEN}- terminal <pid>         {Fore.WHITE}: Open a terminal for the process with the given PID.
     {Fore.GREEN}- show <pid>             {Fore.WHITE}: Show details of the process with the given PID.
+    {Fore.GREEN}- select_file <path>     {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
     {Fore.GREEN}- list                   {Fore.WHITE}: List all running processes.
+    {Fore.GREEN}- kill <pid>             {Fore.WHITE}: Kill the process with the given PID.
+    {Fore.GREEN}- kill_all               {Fore.WHITE}: Kill all spawned processes.
     {Fore.GREEN}- exit                   {Fore.WHITE}: Exit the program.
     {Fore.GREEN}- help                   {Fore.WHITE}: Show this help text.
     """
     print(help_text)
 
+def kill_process(pid):
+    if pid in processes:
+        process, master_fd = processes[pid]
+        process.terminate()
+        del processes[pid]
+        print(f"Killed process with PID {pid}.")
+    else:
+        print(f"No process found with PID {pid}.")
+
+def kill_all_processes():
+    for pid in list(processes.keys()):
+        kill_process(pid)
+    print("Killed all spawned processes.")
 
 def main():
     generate_pattern = re.compile(r"^generate(?:\s+(\d+))?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
     show_pattern = re.compile(r"^show\s+(\d+)$")
-    
+    select_file_pattern = re.compile(r"^select_file\s+(.*)$")
+    kill_pattern = re.compile(r"^kill\s+(\d+)$")
+    kill_all_pattern = re.compile(r"^kill_all$")
+
     print(f"{Fore.YELLOW}Welcome! Type '{Fore.GREEN}help{Fore.YELLOW}' to see available commands.")
     show_help()
-    
-    while True:
-        user_input = input(f"{Fore.LIGHTBLUE_EX}Enter command: {Style.RESET_ALL}").strip()
 
-        match = generate_pattern.match(user_input)
-        if match:
-            timeout = match.group(1)
-            if timeout:
-                print(f"{Fore.GREEN}Spawning a process with timeout {timeout} seconds...")
-                spawn_process(timeout=int(timeout))
-            else:
-                print(f"{Fore.GREEN}Spawning a process with default timeout...")
-                spawn_process()
-            continue
+    try:
+        while True:
+            user_input = input(f"{Fore.LIGHTBLUE_EX}Enter command: {Style.RESET_ALL}").strip()
 
-        match = terminal_pattern.match(user_input)
-        if match:
-            try:
-                pid = int(match.group(1))
-                print(f"{Fore.GREEN}Opening terminal for PID {pid}...")
-                open_terminal(pid)
-            except ValueError:
-                print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
-            continue
+            match = generate_pattern.match(user_input)
+            if match:
+                timeout = match.group(1)
+                if timeout:
+                    print(f"{Fore.GREEN}Spawning a process with timeout {timeout} seconds...")
+                    spawn_process(timeout=int(timeout))
+                else:
+                    print(f"{Fore.GREEN}Spawning a process with default timeout...")
+                    spawn_process()
+                continue
 
-        match = show_pattern.match(user_input)
-        if match:
-            try:
-                pid = int(match.group(1))
-                print(f"{Fore.GREEN}Showing details for PID {pid}...")
-                process_details(pid)
-            except ValueError:
-                print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
-            continue
+            match = terminal_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    print(f"{Fore.GREEN}Opening terminal for PID {pid}...")
+                    open_terminal(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
+                continue
 
-        if user_input == "list":
-            print(f"{Fore.CYAN}Listing all processes...")
-            list_processes()
-            continue
+            match = show_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    print(f"{Fore.GREEN}Showing details for PID {pid}...")
+                    process_details(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
+                continue
 
-        if user_input == "exit":
-            print(f"{Fore.MAGENTA}Exiting... Goodbye!")
-            exit(0)
+            match = select_file_pattern.match(user_input)
+            if match:
+                file_path = match.group(1).strip()
+                print(f"{Fore.GREEN}Creating shared memory from file: {file_path}...")
+                create_shared_memory_with_file(file_path)
+                continue
 
-        if user_input == "help":
-            show_help()
-            continue
+            match = kill_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    print(f"{Fore.GREEN}Killing process with PID {pid}...")
+                    kill_process(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer.")
+                continue
 
-        print(f"{Fore.RED}Unknown command. Type '{Fore.GREEN}help{Fore.RED}' for available commands.")
+            match = kill_all_pattern.match(user_input)
+            if match:
+                print(f"{Fore.GREEN}Killing all spawned processes...")
+                kill_all_processes()
+                continue
+
+            if user_input == "list":
+                print(f"{Fore.CYAN}Listing all processes...")
+                list_processes()
+                continue
+
+            if user_input == "exit":
+                kill_all_processes()
+                print(f"{Fore.MAGENTA}Exiting... Goodbye!")
+                exit(0)
+
+            if user_input == "help":
+                show_help()
+                continue
+
+            print(f"{Fore.RED}Unknown command. Type '{Fore.GREEN}help{Fore.RED}' for available commands.")
+
+    except KeyboardInterrupt:
+        print("\nExiting...")
+        kill_all_processes()
+        exit(0)
 
 if __name__ == "__main__":
     main()
