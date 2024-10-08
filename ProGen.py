@@ -148,7 +148,7 @@ init(autoreset=True)
 def show_help():
     help_text = f"""
     {Fore.CYAN}Available Commands:
-    {Fore.GREEN}- generate [timeout] [noclass]           {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
+    {Fore.GREEN}- generate [timeout] [no-class]           {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
     {Fore.GREEN}- terminal <pid>                         {Fore.WHITE}: Open a terminal for the process with the given PID.
     {Fore.GREEN}- show <pid>                             {Fore.WHITE}: Show details of the process with the given PID.
     {Fore.GREEN}- change_class <pid>                     {Fore.WHITE}: Change scheduling policy of the process to SCX.
