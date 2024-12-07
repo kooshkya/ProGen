@@ -12,6 +12,16 @@ from multiprocessing import shared_memory
 processes = {}
 SCHED_EXT = 7
 
+SCHEDULING_CLASSES = {
+    0: "SCHED_OTHER",   # Default Linux time-sharing scheduler
+    1: "SCHED_FIFO",    # First-In-First-Out real-time scheduler
+    2: "SCHED_RR",      # Round-Robin real-time scheduler
+    3: "SCHED_BATCH",   # Batch scheduler for CPU-intensive processes
+    5: "SCHED_IDLE",    # Idle scheduler for very low priority tasks
+    6: "SCHED_DEADLINE",# Deadline scheduler for real-time processes
+    7: "SCHED_EXT",
+}
+
 def process_details(pid):
     if pid in processes:
         try:
@@ -22,6 +32,7 @@ def process_details(pid):
             cpu_affinity = proc.cpu_affinity()
             current_cpu = proc.cpu_num()
             memory_info = proc.memory_info()
+            policy = SCHEDULING_CLASSES.get(os.sched_getscheduler(pid), "Unknown")
 
             print(f"PID: {pid}")
             print(f"Status: {status}")
@@ -29,6 +40,7 @@ def process_details(pid):
             print(f"CPU Percent: {cpu_percent}%")
             print(f"Current CPU: {current_cpu}")
             print(f"CPU Affinity (CPUs it can run on): {cpu_affinity}")
+            print(f"Sched_Class: {policy}")
             print(f"Memory Info: {memory_info}")
             print(f"Elapsed Time Since Creation (seconds): {time.time() - proc.create_time()}")
         except psutil.NoSuchProcess:
@@ -130,16 +142,27 @@ def create_shared_memory_with_file(file_path):
     print(f"Created shared memory '{shm.name}' with size {shm.size} bytes and stored the contents of {file_path}.")
     return shm
 
-def pause_resume(pid, action):
+def pause_resume(pid):
     if pid in processes:
-        if action == 'pause':
-            os.kill(pid, signal.SIGUSR1)
-            print(f"Sent SIGUSR1 (pause) to process {pid}.")
-        elif action == 'resume':
-            os.kill(pid, signal.SIGUSR2)
-            print(f"Sent SIGUSR2 (resume) to process {pid}.")
-        else:
-            print(f"{Fore.RED}Invalid action: {action}. Use 'pause' or 'resume'.")
+        os.kill(pid, signal.SIGUSR1)
+        print(f"Sent SIGUSR1 (pause/resume) to process {pid}.")
+    else:
+        print(f"No process found with PID {pid}.")
+
+def step_exec(pid):
+    if pid in processes:
+        os.kill(pid, signal.SIGUSR1)
+        print(f"Sent SIGUSR1 (pause/resume) to process {pid}.")
+        time.sleep(1)
+        os.kill(pid, signal.SIGUSR1)
+        print(f"Sent SIGUSR1 (pause/resume) to process {pid}.")
+    else:
+        print(f"No process found with PID {pid}.")
+
+def yield_process(pid):
+    if pid in processes:
+        os.kill(pid, signal.SIGUSR2)
+        print(f"Sent SIGUSR2 (yield) to process {pid}.")
     else:
         print(f"No process found with PID {pid}.")
 
@@ -154,7 +177,9 @@ def show_help():
     {Fore.GREEN}- change_class <pid>                     {Fore.WHITE}: Change scheduling policy of the process to SCX.
     {Fore.GREEN}- set_affinity <pid> <cpu list>          {Fore.WHITE}: Set the CPU affinity for the process with the given PID to the specified list of CPUs.
     {Fore.GREEN}- select_file <path>                     {Fore.WHITE}: Specify a file path to create shared memory with the process PID.
-    {Fore.GREEN}- pause_resume <pid> <pause/resume>      {Fore.WHITE}: Pause or resume the process with the given PID.
+    {Fore.GREEN}- pause_resume <pid>                     {Fore.WHITE}: Pause or resume the process with the given PID.
+    {Fore.GREEN}- step_exec <pid>                        {Fore.WHITE}: Send two pause/resume signals with a 1 second distance to the give PID.
+    {Fore.GREEN}- yield <pid>                            {Fore.WHITE}: Make a process yield.
     {Fore.GREEN}- list                                   {Fore.WHITE}: List all running processes.
     {Fore.GREEN}- kill <pid>                             {Fore.WHITE}: Kill the process with the given PID.
     {Fore.GREEN}- kill_all                               {Fore.WHITE}: Kill all spawned processes.
@@ -177,6 +202,26 @@ def kill_all_processes():
         kill_process(pid)
     print("Killed all spawned processes.")
 
+def read_pipe():
+    output_file = "dump.txt"
+    trace_pipe_path = "/sys/kernel/debug/tracing/trace_pipe"
+
+    try:
+        with subprocess.Popen(
+            ["sudo", "cat", trace_pipe_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        ) as proc, open(output_file, "a") as out_file:
+            print(f"Writing trace_pipe output to {output_file}...")
+            for line in proc.stdout:
+                out_file.write(line)
+            print(f"Trace output successfully written to {output_file}")
+    except KeyboardInterrupt:
+        print("Stopped by user.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 def main():
     generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
@@ -185,8 +230,11 @@ def main():
     select_file_pattern = re.compile(r"^select_file\s+(.*)$")
     kill_pattern = re.compile(r"^kill\s+(\d+)$")
     kill_all_pattern = re.compile(r"^kill_all$")
-    pause_resume_pattern = re.compile(r"^pause_resume\s+(\d+)\s+(pause|resume)$")
+    pause_resume_pattern = re.compile(r"^pause_resume\s+(\d+)$")
+    step_exec_pattern = re.compile(r"^step_exec\s+(\d+)$")
+    yield_pattern = re.compile(r"^yield\s+(\d+)$")
     affinity_pattern = re.compile(r"^set_affinity\s+(\d+)\s+([\d,]+)$")
+    read_pipe_pattern = re.compile(r"^read_pipe$")
 
     print(f"{Fore.YELLOW}Welcome! Type '{Fore.GREEN}help{Fore.YELLOW}' to see available commands.")
     show_help()
@@ -274,12 +322,34 @@ def main():
             if match:
                 try:
                     pid = int(match.group(1))
-                    action = match.group(2)
-                    pause_resume(pid, action)
+                    pause_resume(pid)
                 except ValueError:
-                    print(f"{Fore.RED}Invalid PID or action. Please enter a valid integer and action.")
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer pid.")
                 continue
 
+            match = step_exec_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    step_exec(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer pid.")
+                continue
+
+            match = yield_pattern.match(user_input)
+            if match:
+                try:
+                    pid = int(match.group(1))
+                    yield_process(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer pid.")
+                continue
+
+            match = read_pipe_pattern.match(user_input)
+            if match:
+                read_pipe()
+                continue
+            
             if user_input == "list":
                 print(f"{Fore.CYAN}Listing all processes...")
                 list_processes()

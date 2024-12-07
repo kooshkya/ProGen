@@ -6,16 +6,14 @@
 #include <time.h>
 #include <sched.h>
 
-#define PRINT_INTERVAL_SECONDS 5
-
 volatile sig_atomic_t waiting = false;
 
 void handle_sigusr1(int sig) {
-    waiting = true;
+    waiting = !waiting;
 }
 
 void handle_sigusr2(int sig) {
-    waiting = false;
+    sched_yield();
 }
 
 
