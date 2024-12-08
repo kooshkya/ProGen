@@ -9,7 +9,8 @@
 volatile sig_atomic_t waiting = false;
 
 void handle_sigusr1(int sig) {
-    waiting = !waiting;
+    if (!waiting)
+        waiting = !waiting;
 }
 
 void handle_sigusr2(int sig) {
@@ -39,6 +40,7 @@ int main(int argc, char *argv[]) {
     while (1) {
         while (waiting) {
             pause(); 
+            waiting = 0;
         }
     }
 
