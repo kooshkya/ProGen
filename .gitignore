@@ -1,3 +1,6 @@
 *.out
 venv/
 dump.txt
+*.o
+.vscode/
+.idea/
