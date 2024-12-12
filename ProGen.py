@@ -171,7 +171,7 @@ init(autoreset=True)
 def show_help():
     help_text = f"""
     {Fore.CYAN}Available Commands:
-    {Fore.GREEN}- generate [timeout] [no-class]           {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
+    {Fore.GREEN}- generate [timeout] [no-class]          {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
     {Fore.GREEN}- terminal <pid>                         {Fore.WHITE}: Open a terminal for the process with the given PID.
     {Fore.GREEN}- show <pid>                             {Fore.WHITE}: Show details of the process with the given PID.
     {Fore.GREEN}- change_class <pid>                     {Fore.WHITE}: Change scheduling policy of the process to SCX.
@@ -183,6 +183,7 @@ def show_help():
     {Fore.GREEN}- list                                   {Fore.WHITE}: List all running processes.
     {Fore.GREEN}- kill <pid>                             {Fore.WHITE}: Kill the process with the given PID.
     {Fore.GREEN}- kill_all                               {Fore.WHITE}: Kill all spawned processes.
+    {Fore.GREEN}- wait <pid>                             {Fore.WHITE}: Wait on process with pid
     {Fore.GREEN}- exit                                   {Fore.WHITE}: Exit the program.
     {Fore.GREEN}- help                                   {Fore.WHITE}: Show this help text.
     """
@@ -202,25 +203,9 @@ def kill_all_processes():
         kill_process(pid)
     print("Killed all spawned processes.")
 
-def read_pipe():
-    output_file = "dump.txt"
-    trace_pipe_path = "/sys/kernel/debug/tracing/trace_pipe"
-
-    try:
-        with subprocess.Popen(
-            ["sudo", "cat", trace_pipe_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        ) as proc, open(output_file, "a") as out_file:
-            print(f"Writing trace_pipe output to {output_file}...")
-            for line in proc.stdout:
-                out_file.write(line)
-            print(f"Trace output successfully written to {output_file}")
-    except KeyboardInterrupt:
-        print("Stopped by user.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+def wait_process(pid):
+    pid, status = os.waitpid(pid, 0)
+    print(f"Waited and got pid={pid}, status={status}")
 
 def main():
     generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
@@ -234,7 +219,7 @@ def main():
     step_exec_pattern = re.compile(r"^step_exec\s+(\d+)$")
     yield_pattern = re.compile(r"^yield\s+(\d+)$")
     affinity_pattern = re.compile(r"^set_affinity\s+(\d+)\s+([\d,]+)$")
-    read_pipe_pattern = re.compile(r"^read_pipe$")
+    wait_process_pattern = re.compile(r"^wait\s+(\d+)$")
 
     print(f"{Fore.YELLOW}Welcome! Type '{Fore.GREEN}help{Fore.YELLOW}' to see available commands.")
     show_help()
@@ -345,12 +330,16 @@ def main():
                     print(f"{Fore.RED}Invalid PID. Please enter a valid integer pid.")
                 continue
 
-            match = read_pipe_pattern.match(user_input)
+            match = wait_process_pattern.match(user_input)
             if match:
-                read_pipe()
+                try:
+                    pid = int(match.group(1))
+                    wait_process(pid)
+                except ValueError:
+                    print(f"{Fore.RED}Invalid PID. Please enter a valid integer pid.")
                 continue
-            
-            if user_input == "list":
+
+            if user_input == "list" or user_input == "l":
                 print(f"{Fore.CYAN}Listing all processes...")
                 list_processes()
                 continue
@@ -359,6 +348,12 @@ def main():
                 kill_all_processes()
                 print(f"{Fore.MAGENTA}Exiting... Goodbye!")
                 exit(0)
+
+            if user_input == "clear":
+                if os.name == 'nt':
+                    os.system('cls')
+                else:
+                    os.system('clear')
 
             if user_input == "help":
                 show_help()

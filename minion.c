@@ -25,7 +25,6 @@ void busyloop(int seconds) {
 }
 
 int main(int argc, char *argv[]) {
-    
     if (argc > 1) {
         int busy_time = atoi(argv[1]);
         if (busy_time > 0) {
