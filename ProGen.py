@@ -26,7 +26,9 @@ SCHEDULING_CLASSES = {
 
 class MinionProcess:
     def __init__(self, scheduled_start_time, *run_stop_intervals):
+        # This is relative to the start of the executor loop
         self.scheduled_start_time = scheduled_start_time
+        
         # The minion program takes each run or stop interval as seconds nanoseconds so each entry in run_stop_intervals should be broken to these two parts
         self.run_stop_separated_intervals = []
         for x in run_stop_intervals:
@@ -35,6 +37,7 @@ class MinionProcess:
         self.run_stop_str_separated_intervals = [str(x) for x in self.run_stop_separated_intervals]
         self.pid = -1
         self.start_time = -1
+        self.start_delay = 0
         self.end_time = -1
         self.end_status = None
         self.waiter_thread = None
@@ -48,23 +51,39 @@ class MinionProcess:
                 os.sched_setscheduler(0, SCHED_EXT, param)
                 os.execl("./a.out", "./a.out", *self.run_stop_str_separated_intervals)
             else:
-                print(f"spawned configured minion process with pid {pid}")
                 self.pid = pid
                 self.waiter_thread = threading.Thread(target=wait_on_child, args=(self,))
                 self.waiter_thread.start()
         except OSError as e:
             print(f"Fork failed: {e}")
 
+    def __str__(self):
+            scheduled_time_str = f"{Fore.CYAN}Scheduled Start Time:{Style.RESET_ALL} {self.scheduled_start_time:.6f} sec"
+            run_stop_intervals_str = f"{Fore.GREEN}Run/Stop Intervals:{Style.RESET_ALL} " + ", ".join(self.run_stop_str_separated_intervals)
+            pid_str = f"{Fore.YELLOW}PID:{Style.RESET_ALL} {self.pid}"
+            start_time_str = f"{Fore.YELLOW}Start Time:{Style.RESET_ALL} {self.start_time if self.start_time != -1 else 'Not started yet'}"
+            start_delay_str = f"{Fore.YELLOW}Start Delay:{Style.RESET_ALL} {self.start_delay if self.start_delay else 'Not started yet'}"
+            end_time_str = f"{Fore.YELLOW}End Time:{Style.RESET_ALL} {self.end_time if self.end_time != -1 else 'Not finished yet'}"
+            duration_str = f"{Fore.YELLOW}Duration:{Style.RESET_ALL} {self.end_time - self.start_time if self.end_time != -1 and self.start_time != -1 else 'Not finished yet'}"
+            end_status_str = f"{Fore.YELLOW}End Status:{Style.RESET_ALL} {self.end_status if self.end_status is not None else 'Not finished yet'}"
+            
+            return f"""{scheduled_time_str}
+{run_stop_intervals_str}
+{pid_str}
+{start_time_str}
+{start_delay_str}
+{end_time_str}
+{duration_str}
+{end_status_str}
+"""
 
 def wait_on_child(minion: MinionProcess):
-    print(f"start wait for {minion.pid} at {time.monotonic()}")
     pid, status = os.waitpid(minion.pid, 0)
     now = time.monotonic()
     if pid == minion.pid:
         minion.end_status = status
         minion.end_time = now
-        print(f"Child process {pid} started at {minion.start_time} ended at {minion.end_time} total {minion.end_time - minion.start_time:.6f}")
-
+        
 
 def run_process_schedule(file_path):
     processes = parse_file(file_path)
@@ -72,10 +91,11 @@ def run_process_schedule(file_path):
         return
     start = do_run_processes(proc_list=processes)
     for p in processes:
+        p.start_delay = p.scheduled_start_time + start - p.start_time
         p.waiter_thread.join(timeout=None)
-    for i, p in enumerate(processes):
-        print(f"{i}th process ran at {p.start_time:.9f} while scheduled at {start + p.scheduled_start_time:.9f}")
 
+    for i, p in enumerate(processes):
+        print(f"{i}:\n{str(p)}")
 
 def parse_file(file_path):
     if not os.path.exists(file_path):
