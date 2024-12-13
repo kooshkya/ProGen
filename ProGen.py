@@ -23,32 +23,62 @@ SCHEDULING_CLASSES = {
 }
 
 class MinionProcess:
-    def __init__(self, start_time, *run_stop_intervals):
-        self.start_time = start_time
+    def __init__(self, scheduled_start_time, *run_stop_intervals):
+        self.scheduled_start_time = scheduled_start_time
         # The minion program takes each run or stop interval as seconds nanoseconds so each entry in run_stop_intervals should be broken to these two parts
-        self.run_stop_separated_intervals = [(int(x), int((x - int(x)) * 10**9)) for x in run_stop_intervals]
+        self.run_stop_separated_intervals = []
+        for x in run_stop_intervals:
+            self.run_stop_separated_intervals.append(int(x))
+            self.run_stop_separated_intervals.append(int((x - int(x)) * 10**9))
+        self.run_stop_str_separated_intervals = [str(x) for x in self.run_stop_separated_intervals]
 
     def run(self):
         try:
             pid = os.fork()
             if pid == 0:
-                os.execl("./a.out", "./a.out", *self.run_stop_separated_intervals)
+                os.execl("./a.out", "./a.out", *self.run_stop_str_separated_intervals)
             else:
                 print(f"spawned configured minion process with pid {pid}")
                 return
         except OSError as e:
             print(f"Fork failed: {e}")
 
+
 def run_process_schedule(file_path):
+    processes = parse_file(file_path)
+    if not processes:
+        return
+    do_run_processes(proc_list=processes)
+    for i, p in enumerate(processes):
+        print(f"{i}th process ran at {p.start_time:.9f} while scheduled at {p.scheduled_start_time:.9f}")
+
+
+def parse_file(file_path):
     if not os.path.exists(file_path):
         print(f"{file_path} does not exists!")
+        return None
     with open(file_path, "r") as f:
         lines = f.readlines()
         lines = [x.strip() for x in lines]
         lines = [x for x in lines if not x.startswith("#")]
         split_lines = [x.split() for x in lines]
         split_lines = [[float(y) for y in x] for x in split_lines]
-        print(f"{split_lines=}")
+        split_lines = sorted(split_lines, key = lambda x: x[0])
+        processes = []
+        for line in split_lines:
+            processes.append(MinionProcess(*line))
+        return processes
+
+
+def do_run_processes(proc_list: list[MinionProcess]):
+    start = time.perf_counter()
+    cursor = 0
+    while(cursor < len(proc_list)):
+        now = time.perf_counter()
+        if (now - start >= proc_list[cursor].scheduled_start_time):
+            proc_list[cursor].run()
+            proc_list[cursor].start_time = now - start
+            cursor += 1
 
 
 def process_details(pid):

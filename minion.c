@@ -34,7 +34,7 @@ void __always_inline busyloop(const struct timespec *duration, const struct time
         clock_gettime(CLOCK_MONOTONIC, &now);
         timespec_diff(busyloop_start, &now, &diff);
         if (timespec_compare(&diff, duration) >= 0) {
-            printf("diff is %ld s %ld ns\n", diff.tv_sec, diff.tv_nsec);
+            // printf("diff is %ld s %ld ns\n", diff.tv_sec, diff.tv_nsec);
             return;
         }
         goto check_timer;
