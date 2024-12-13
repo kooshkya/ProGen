@@ -6,6 +6,7 @@ import psutil
 import time
 import re
 import signal
+import threading
 from colorama import Fore, Style, init
 from multiprocessing import shared_memory
 
@@ -22,6 +23,7 @@ SCHEDULING_CLASSES = {
     7: "SCHED_EXT",
 }
 
+
 class MinionProcess:
     def __init__(self, scheduled_start_time, *run_stop_intervals):
         self.scheduled_start_time = scheduled_start_time
@@ -31,9 +33,15 @@ class MinionProcess:
             self.run_stop_separated_intervals.append(int(x))
             self.run_stop_separated_intervals.append(int((x - int(x)) * 10**9))
         self.run_stop_str_separated_intervals = [str(x) for x in self.run_stop_separated_intervals]
+        self.pid = -1
+        self.start_time = -1
+        self.end_time = -1
+        self.end_status = None
+        self.waiter_thread = None
 
     def run(self):
         try:
+            self.start_time = time.monotonic()
             pid = os.fork()
             if pid == 0:
                 param = os.sched_param(0)
@@ -41,18 +49,32 @@ class MinionProcess:
                 os.execl("./a.out", "./a.out", *self.run_stop_str_separated_intervals)
             else:
                 print(f"spawned configured minion process with pid {pid}")
-                return
+                self.pid = pid
+                self.waiter_thread = threading.Thread(target=wait_on_child, args=(self,))
+                self.waiter_thread.start()
         except OSError as e:
             print(f"Fork failed: {e}")
+
+
+def wait_on_child(minion: MinionProcess):
+    print(f"start wait for {minion.pid} at {time.monotonic()}")
+    pid, status = os.waitpid(minion.pid, 0)
+    now = time.monotonic()
+    if pid == minion.pid:
+        minion.end_status = status
+        minion.end_time = now
+        print(f"Child process {pid} started at {minion.start_time} ended at {minion.end_time} total {minion.end_time - minion.start_time:.6f}")
 
 
 def run_process_schedule(file_path):
     processes = parse_file(file_path)
     if not processes:
         return
-    do_run_processes(proc_list=processes)
+    start = do_run_processes(proc_list=processes)
+    for p in processes:
+        p.waiter_thread.join(timeout=None)
     for i, p in enumerate(processes):
-        print(f"{i}th process ran at {p.start_time:.9f} while scheduled at {p.scheduled_start_time:.9f}")
+        print(f"{i}th process ran at {p.start_time:.9f} while scheduled at {start + p.scheduled_start_time:.9f}")
 
 
 def parse_file(file_path):
@@ -73,15 +95,14 @@ def parse_file(file_path):
 
 
 def do_run_processes(proc_list: list[MinionProcess]):
-    start = time.perf_counter()
+    start = time.monotonic()
     cursor = 0
     while(cursor < len(proc_list)):
-        now = time.perf_counter()
+        now = time.monotonic()
         if (now - start >= proc_list[cursor].scheduled_start_time):
             proc_list[cursor].run()
-            proc_list[cursor].start_time = now - start
             cursor += 1
-
+    return start
 
 def process_details(pid):
     if pid in processes:
