@@ -35,6 +35,7 @@ class MinionProcess:
             self.run_stop_separated_intervals.append(int(x))
             self.run_stop_separated_intervals.append(int((x - int(x)) * 10**9))
         self.run_stop_str_separated_intervals = [str(x) for x in self.run_stop_separated_intervals]
+
         self.pid = -1
         self.start_time = -1
         self.start_delay = 0
@@ -43,6 +44,12 @@ class MinionProcess:
         self.waiter_thread = None
         self.affinity = affinity
         self.keep_cfs = keep_cfs
+        self.rusage = None
+
+        # calculated stats
+        self.life_duration = None
+        self.cpu_time = None
+        self.off_cpu_time = None
 
     def run(self):
         try:
@@ -62,32 +69,43 @@ class MinionProcess:
         except OSError as e:
             print(f"Fork failed: {e}")
 
+    def calculate_stats(self):
+        self.life_duration = self.end_time - self.start_time
+        self.cpu_time = self.rusage.ru_utime + self.rusage.ru_stime
+        self.off_cpu_time = self.life_duration - self.cpu_time
+
     def __str__(self):
             scheduled_time_str = f"{Fore.CYAN}Scheduled Start Time:{Style.RESET_ALL} {self.scheduled_start_time:.6f} sec"
             run_stop_intervals_str = f"{Fore.GREEN}Run/Stop Intervals:{Style.RESET_ALL} " + ", ".join(self.run_stop_str_separated_intervals)
             pid_str = f"{Fore.YELLOW}PID:{Style.RESET_ALL} {self.pid}"
-            start_time_str = f"{Fore.YELLOW}Start Time:{Style.RESET_ALL} {self.start_time if self.start_time != -1 else 'Not started yet'}"
             start_delay_str = f"{Fore.YELLOW}Start Delay:{Style.RESET_ALL} {self.start_delay if self.start_delay else 'Not started yet'}"
+            start_time_str = f"{Fore.YELLOW}Start Time:{Style.RESET_ALL} {self.start_time if self.start_time != -1 else 'Not started yet'}"
             end_time_str = f"{Fore.YELLOW}End Time:{Style.RESET_ALL} {self.end_time if self.end_time != -1 else 'Not finished yet'}"
-            duration_str = f"{Fore.YELLOW}Duration:{Style.RESET_ALL} {self.end_time - self.start_time if self.end_time != -1 and self.start_time != -1 else 'Not finished yet'}"
+            duration_str = f"{Fore.YELLOW}Duration:{Style.RESET_ALL} {self.life_duration if self.life_duration else 'Not finished yet'}"
+            cpu_time_str = f"{Fore.YELLOW}CPU Time:{Style.RESET_ALL} {self.cpu_time if self.cpu_time else 'Not finished yet'}"
+            off_cpu_time_str = f"{Fore.YELLOW}Off-CPU Time:{Style.RESET_ALL} {self.off_cpu_time if self.off_cpu_time else 'Not finished yet'}"
             end_status_str = f"{Fore.YELLOW}End Status:{Style.RESET_ALL} {self.end_status if self.end_status is not None else 'Not finished yet'}"
             
             return f"""{scheduled_time_str}
 {run_stop_intervals_str}
 {pid_str}
-{start_time_str}
 {start_delay_str}
+{start_time_str}
 {end_time_str}
 {duration_str}
+{cpu_time_str}
+{off_cpu_time_str}
 {end_status_str}
 """
 
 def wait_on_child(minion: MinionProcess):
-    pid, status = os.waitpid(minion.pid, 0)
+    pid, status, rusage = os.wait4(minion.pid, 0)
     now = time.monotonic()
     if pid == minion.pid:
         minion.end_status = status
         minion.end_time = now
+        minion.rusage = rusage
+        minion.calculate_stats()
         
 
 def run_process_schedule(file_path):
@@ -102,7 +120,18 @@ def run_process_schedule(file_path):
     print(f"started at {start} ended at {end} total {end - start:.6f} seconds")
     for i, p in enumerate(processes):
         print(f"{i}:\n{str(p)}")
+    print_stats(processes)
 
+
+def print_stats(processes: list[MinionProcess]):
+    off_cpu_times = sorted([x.off_cpu_time for x in processes])
+    print(f"off_cpu times {", ".join(f"{x:.3f}" for x in off_cpu_times)}")
+    total_off_cpu_time = sum(off_cpu_times)
+    total_cpu_time = sum(x.cpu_time for x in processes)
+    avg_off_cpu_time = total_off_cpu_time / len(processes)
+    print(f"{Fore.GREEN}total cpu time:{Style.RESET_ALL}  {total_cpu_time}")
+    print(f"{Fore.GREEN}total off-cpu time:{Style.RESET_ALL}  {total_off_cpu_time}")
+    print(f"{Fore.GREEN}average off-cpu time:{Style.RESET_ALL}  {avg_off_cpu_time}")
 
 def parse_file(file_path):
     if not os.path.exists(file_path):
