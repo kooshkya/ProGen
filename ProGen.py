@@ -25,7 +25,7 @@ SCHEDULING_CLASSES = {
 
 
 class MinionProcess:
-    def __init__(self, scheduled_start_time, *run_stop_intervals):
+    def __init__(self, affinity, keep_cfs, scheduled_start_time, *run_stop_intervals):
         # This is relative to the start of the executor loop
         self.scheduled_start_time = scheduled_start_time
         
@@ -41,6 +41,8 @@ class MinionProcess:
         self.end_time = -1
         self.end_status = None
         self.waiter_thread = None
+        self.affinity = affinity
+        self.keep_cfs = keep_cfs
 
     def run(self):
         try:
@@ -48,7 +50,10 @@ class MinionProcess:
             pid = os.fork()
             if pid == 0:
                 param = os.sched_param(0)
-                os.sched_setscheduler(0, SCHED_EXT, param)
+                if not self.keep_cfs:
+                    os.sched_setscheduler(0, SCHED_EXT, param)
+                if self.affinity:
+                    os.sched_setaffinity(0, self.affinity)
                 os.execl("./a.out", "./a.out", *self.run_stop_str_separated_intervals)
             else:
                 self.pid = pid
@@ -98,20 +103,30 @@ def run_process_schedule(file_path):
     for i, p in enumerate(processes):
         print(f"{i}:\n{str(p)}")
 
+
 def parse_file(file_path):
     if not os.path.exists(file_path):
         print(f"{file_path} does not exists!")
         return None
     with open(file_path, "r") as f:
         lines = f.readlines()
-        lines = [x.strip() for x in lines]
+        lines = [x.strip() for x in lines if x.strip()]
         lines = [x for x in lines if not x.startswith("#")]
         split_lines = [x.split() for x in lines]
+        keep_cfs_indices = set()
+        affinities = {}
+        for i, line in enumerate(split_lines):
+            if line[0] == "!":
+                keep_cfs_indices.add(i)
+                del line[0]
+            if line[0].startswith("[") and line[0].endswith("]"):
+                affinities[i] = set(int(x) for x in line[0][1:-1].split(","))
+                del line[0]
         split_lines = [[float(y) for y in x] for x in split_lines]
         split_lines = sorted(split_lines, key = lambda x: x[0])
         processes = []
-        for line in split_lines:
-            processes.append(MinionProcess(*line))
+        for i, line in enumerate(split_lines):
+            processes.append(MinionProcess(affinities.get(i, None), bool(i in keep_cfs_indices), *line))
         return processes
 
 
