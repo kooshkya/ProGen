@@ -93,7 +93,8 @@ def run_process_schedule(file_path):
     for p in processes:
         p.start_delay = p.scheduled_start_time + start - p.start_time
         p.waiter_thread.join(timeout=None)
-
+    end = time.monotonic()
+    print(f"started at {start} ended at {end} total {end - start:.6f} seconds")
     for i, p in enumerate(processes):
         print(f"{i}:\n{str(p)}")
 
