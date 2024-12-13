@@ -36,6 +36,8 @@ class MinionProcess:
         try:
             pid = os.fork()
             if pid == 0:
+                param = os.sched_param(0)
+                os.sched_setscheduler(0, SCHED_EXT, param)
                 os.execl("./a.out", "./a.out", *self.run_stop_str_separated_intervals)
             else:
                 print(f"spawned configured minion process with pid {pid}")
