@@ -22,6 +22,35 @@ SCHEDULING_CLASSES = {
     7: "SCHED_EXT",
 }
 
+class MinionProcess:
+    def __init__(self, start_time, *run_stop_intervals):
+        self.start_time = start_time
+        # The minion program takes each run or stop interval as seconds nanoseconds so each entry in run_stop_intervals should be broken to these two parts
+        self.run_stop_separated_intervals = [(int(x), int((x - int(x)) * 10**9)) for x in run_stop_intervals]
+
+    def run(self):
+        try:
+            pid = os.fork()
+            if pid == 0:
+                os.execl("./a.out", "./a.out", *self.run_stop_separated_intervals)
+            else:
+                print(f"spawned configured minion process with pid {pid}")
+                return
+        except OSError as e:
+            print(f"Fork failed: {e}")
+
+def run_process_schedule(file_path):
+    if not os.path.exists(file_path):
+        print(f"{file_path} does not exists!")
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+        lines = [x.strip() for x in lines]
+        lines = [x for x in lines if not x.startswith("#")]
+        split_lines = [x.split() for x in lines]
+        split_lines = [[float(y) for y in x] for x in split_lines]
+        print(f"{split_lines=}")
+
+
 def process_details(pid):
     if pid in processes:
         try:
@@ -171,6 +200,7 @@ init(autoreset=True)
 def show_help():
     help_text = f"""
     {Fore.CYAN}Available Commands:
+    {Fore.GREEN}- run_sched [filename]                   {Fore.WHITE}: Run the schedule denoted in filename
     {Fore.GREEN}- generate [timeout] [no-class]          {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
     {Fore.GREEN}- terminal <pid>                         {Fore.WHITE}: Open a terminal for the process with the given PID.
     {Fore.GREEN}- show <pid>                             {Fore.WHITE}: Show details of the process with the given PID.
@@ -208,6 +238,7 @@ def wait_process(pid):
     print(f"Waited and got pid={pid}, status={status}")
 
 def main():
+    run_sched_pattern = re.compile(r"^(?:run_sched|rs)\s+([\w.]+)$")
     generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
     show_pattern = re.compile(r"^show\s+(\d+)$")
@@ -227,6 +258,12 @@ def main():
     try:
         while True:
             user_input = input(f"{Fore.LIGHTBLUE_EX}Enter command: {Style.RESET_ALL}").strip()
+
+            match = run_sched_pattern.match(user_input)
+            if match:
+                file_path = match.group(1)
+                run_process_schedule(file_path)
+                continue
 
             match = generate_pattern.match(user_input)
             if match:
