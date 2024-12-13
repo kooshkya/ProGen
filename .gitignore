@@ -4,3 +4,4 @@ dump.txt
 *.o
 .vscode/
 .idea/
+input.txt
