@@ -7,17 +7,16 @@
 #include <sched.h>
 
 #include "code_timing.h"
-#include "timespec_tools.h"
 
 
 #define MAX_INTERVALS 10
 
 // records program start
-struct timespec busyloop_start;
+clock_t busyloop_start;
 
 int run_count;
 int stop_count;
-struct timespec run_intervals[MAX_INTERVALS];
+clock_t run_intervals[MAX_INTERVALS];
 struct timespec stop_intervals[MAX_INTERVALS];
 
 void __always_inline custom_sleep(const struct timespec *duration) {
@@ -27,21 +26,20 @@ void __always_inline custom_sleep(const struct timespec *duration) {
     }
 }
 
-void __always_inline busyloop(const struct timespec *duration, const struct timespec *busyloop_start) {
-    struct timespec now, diff, old;
+void __always_inline busyloop(clock_t duration, clock_t busyloop_start) {
+    clock_t now, diff, old;
     check_timer:
         old = now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        timespec_diff(busyloop_start, &now, &diff);
-        if (timespec_compare(&diff, duration) >= 0) {
-            // printf("diff is %ld s %ld ns\n", diff.tv_sec, diff.tv_nsec);
+        now = clock();
+        diff = now - busyloop_start;
+        if (diff - duration >= 0) {
             return;
         }
         goto check_timer;
 }
 
 void __always_inline start_busyloop_clock() {
-    clock_gettime(CLOCK_MONOTONIC, &busyloop_start);
+    busyloop_start = clock();
 }
 
 int parse_arguments(int argc, char* argv[]) {
@@ -62,10 +60,10 @@ int parse_arguments(int argc, char* argv[]) {
         switch(i % 4) {
             case 1:
                 run_count++;
-                run_intervals[(i - 1) / 4].tv_sec = strtol(argv[i], NULL, 10);
+                run_intervals[(i - 1) / 4] += strtol(argv[i], NULL, 10) * CLOCKS_PER_SEC;
                 break;
             case 2:
-                run_intervals[(i - 2) / 4].tv_nsec = strtol(argv[i], NULL, 10);
+                run_intervals[(i - 2) / 4] += strtol(argv[i], NULL, 10) * CLOCKS_PER_SEC / 1000000000;
                 break;
             case 3:
                 stop_count++;
@@ -81,7 +79,7 @@ int parse_arguments(int argc, char* argv[]) {
 
 void run_main_loop() {
     for (int i = 0; i < run_count; i++) {
-        busyloop(&run_intervals[i], &busyloop_start);
+        busyloop(run_intervals[i], busyloop_start);
         if (i < stop_count)
             custom_sleep(&stop_intervals[i]);
         start_busyloop_clock();
