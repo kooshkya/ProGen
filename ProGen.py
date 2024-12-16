@@ -144,7 +144,7 @@ def wait_on_child(minion: MinionProcess):
         minion.calculate_stats()
 
 
-def parse_file(file_path):
+def parse_file(file_path, override_keep_cfs=None):
     if not os.path.exists(file_path):
         print(f"{file_path} does not exists!")
         return None
@@ -153,12 +153,16 @@ def parse_file(file_path):
         lines = [x.strip() for x in lines if x.strip()]
         lines = [x for x in lines if not x.startswith("#")]
         split_lines = [x.split() for x in lines]
-        keep_cfs_indices = set()
+        keep_cfs = override_keep_cfs
+        if override_keep_cfs is None:
+            first_line = split_lines[0]
+            if len(first_line) < 2 or not first_line[0] == "class" or not first_line[1].isnumeric() or not first_line[1] in [0, 7]:
+                print(f"{Fore.RED}The first line should determine sched class of minions in format {Fore.WHITE} class <class_int_id>")
+                return None
+            del first_line
+            keep_cfs = (first_line[1] == 0)
         affinities = {}
         for i, line in enumerate(split_lines):
-            if line[0] == "!":
-                keep_cfs_indices.add(i)
-                del line[0]
             if line[0].startswith("[") and line[0].endswith("]"):
                 affinities[i] = set(int(x) for x in line[0][1:-1].split(","))
                 del line[0]
@@ -166,13 +170,14 @@ def parse_file(file_path):
         split_lines = sorted(split_lines, key = lambda x: x[0])
         processes = []
         for i, line in enumerate(split_lines):
-            processes.append(MinionProcess(affinities.get(i, None), bool(i in keep_cfs_indices), *line))
+            processes.append(MinionProcess(affinities.get(i, None), keep_cfs, *line))
         return processes
 
 
 def run_process_schedule(file_path):
     processes = parse_file(file_path)
     if not processes:
+        print(f"{Fore.RED}Could not parse file")
         return
     start = do_run_processes(proc_list=processes)
     for p in processes:
@@ -402,7 +407,7 @@ def wait_process(pid):
     print(f"Waited and got pid={pid}, status={status}")
 
 def main():
-    run_sched_pattern = re.compile(r"^(?:run_sched|rs)\s+([\w.]+)$")
+    run_sched_pattern = re.compile(r"^(?:run_sched|rs)\s+([\w./]+)$")
     generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
     show_pattern = re.compile(r"^show\s+(\d+)$")
