@@ -1,8 +1,5 @@
-to run, first compile minion.c into a.out:
+Process Generator:
 
-gcc minion.c
+This script creates "minion" processes with configurable run/sleep times and tracks their running states.
 
-then create a python venv and install the packages listed in requirements.txt using:
-
-pip install -r requirements.txt
-
+Use make to build.
