@@ -52,6 +52,7 @@ class MinionProcess:
         self.cpu_time = None
         self.off_cpu_time = None
         self.response_time = None
+        self.__stats_calculated = False
 
     def run(self):
         try:
@@ -102,10 +103,14 @@ class MinionProcess:
             print(f"Fork failed: {e}")
 
     def calculate_stats(self):
+        self.__stats_calculated = True
         self.turnaround_time = self.end_time - self.start_time
         self.cpu_time = self.rusage.ru_utime + self.rusage.ru_stime
         self.off_cpu_time = self.turnaround_time - self.cpu_time
         self.response_time = self.cpu_start_time - self.start_time
+
+    def is_finished(self):
+        return bool(self.__stats_calculated)
 
     def __str__(self):
             scheduled_time_str = f"{Fore.CYAN}Scheduled Start Time:{Style.RESET_ALL} {self.scheduled_start_time:.6f} sec"
@@ -134,6 +139,37 @@ class MinionProcess:
 """
     
 
+class ExperimentStats:
+    def __init__(self, processes: list[MinionProcess], experiment_start, experiment_end, experiment_name=None):
+        if(any(not p.is_finished for p in processes)):
+            raise Exception("processes need to be finished")
+        self.experiment_end = experiment_end
+        self.experiment_start = experiment_start
+        self.process_count = len(processes)
+        self.off_cpu_times = sorted([x.off_cpu_time for x in processes])
+        self.total_off_cpu_time = sum(self.off_cpu_times)
+        self.total_cpu_time = sum(x.cpu_time for x in processes)
+        self.avg_off_cpu_time = self.total_off_cpu_time / self.process_count
+        self.experiment_duration = self.experiment_end - self.experiment_start
+        self.throughput = self.process_count / self.experiment_duration
+        self.avg_response_time = sum(x.response_time for x in processes) / self.process_count
+        self.avg_turnaround_time = sum(x.turnaround_time for x in processes) / self.process_count
+        self.experiment_name = experiment_name or "No Name"
+    
+    def __str__(self):
+        return (
+            f"{Fore.BLUE}{'#' * 5} Experiment {self.experiment_name} {'#' * 5}\n"
+            f"{Fore.CYAN}Experiment Started at {Fore.WHITE}{self.experiment_start:.4f}{Fore.CYAN} and ended at {Fore.WHITE}{self.experiment_start:.4f}\n"
+            f"{Fore.GREEN}Experiment Duration:{Style.RESET_ALL} {self.experiment_duration:.6f} s\n"
+            f"{Fore.GREEN}Total CPU Time:{Style.RESET_ALL} {self.total_cpu_time:.6f} s\n"
+            f"{Fore.GREEN}Total Off-CPU Time:{Style.RESET_ALL} {self.total_off_cpu_time:.6f} s\n"
+            f"{Fore.GREEN}Average Off-CPU time:{Style.RESET_ALL} {self.avg_off_cpu_time:.6f} s\n"
+            f"{Fore.GREEN}Throughput:{Style.RESET_ALL} {self.throughput:.6f} procs/s\n"
+            f"{Fore.GREEN}Average Response Time:{Style.RESET_ALL} {self.avg_response_time:.6f} s\n"
+            f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL} {self.avg_turnaround_time:.6f} s"
+        )        
+
+
 def wait_on_child(minion: MinionProcess):
     pid, status, rusage = os.wait4(minion.pid, 0)
     now = time.monotonic()
@@ -156,11 +192,11 @@ def parse_file(file_path, override_keep_cfs=None):
         keep_cfs = override_keep_cfs
         if override_keep_cfs is None:
             first_line = split_lines[0]
-            if len(first_line) < 2 or not first_line[0] == "class" or not first_line[1].isnumeric() or not first_line[1] in [0, 7]:
+            if len(first_line) < 2 or not first_line[0] == "class" or not first_line[1].isnumeric() or not first_line[1] in ['0', '7']:
                 print(f"{Fore.RED}The first line should determine sched class of minions in format {Fore.WHITE} class <class_int_id>")
                 return None
-            del first_line
-            keep_cfs = (first_line[1] == 0)
+            keep_cfs = (first_line[1] == '0')
+            del split_lines[0]
         affinities = {}
         for i, line in enumerate(split_lines):
             if line[0].startswith("[") and line[0].endswith("]"):
@@ -174,20 +210,33 @@ def parse_file(file_path, override_keep_cfs=None):
         return processes
 
 
-def run_process_schedule(file_path):
-    processes = parse_file(file_path)
+def run_schedule(file_path):
+    processes, stats = run_experiment(file_path)
+    if stats:
+        print(f"{str(stats)}")
+
+
+def cmp_schedule(file_path):
+    scx_processes, scx_stats = run_experiment(file_path, override_keep_cfs=False, experiment_name="SCX")
+    if scx_stats:
+        print(f"{str(scx_stats)}")
+    other_processes, other_stats = run_experiment(file_path, override_keep_cfs=True, experiment_name="OTHER")
+    if other_stats:
+        print(f"{str(other_stats)}")
+
+
+def run_experiment(file_path, override_keep_cfs=None, experiment_name=None):
+    processes = parse_file(file_path, override_keep_cfs)
     if not processes:
         print(f"{Fore.RED}Could not parse file")
-        return
+        return None, None
     start = do_run_processes(proc_list=processes)
     for p in processes:
         p.start_delay = p.scheduled_start_time + start - p.start_time
         p.waiter_thread.join(timeout=None)
     end = time.monotonic()
-    print(f"started at {start} ended at {end} total {end - start:.6f} seconds")
-    for i, p in enumerate(processes):
-        print(f"{i}:\n{str(p)}")
-    print_stats(processes, start, end)
+    stats = ExperimentStats(processes, start, end, experiment_name)
+    return processes, stats
 
 
 def do_run_processes(proc_list: list[MinionProcess]):
@@ -369,7 +418,8 @@ init(autoreset=True)
 def show_help():
     help_text = f"""
     {Fore.CYAN}Available Commands:
-    {Fore.GREEN}- run_sched [filename]                   {Fore.WHITE}: Run the schedule denoted in filename
+    {Fore.GREEN}- run_sched [filename]                   {Fore.WHITE}: Run the schedule denoted in filename.
+    {Fore.GREEN}- cmp_sched [filename]                   {Fore.WHITE}: Run the schedule denoted in filename once using scx and once using sched_other and compare.
     {Fore.GREEN}- generate [timeout] [no-class]          {Fore.WHITE}: Spawn a process with an optional timeout (in seconds).
     {Fore.GREEN}- terminal <pid>                         {Fore.WHITE}: Open a terminal for the process with the given PID.
     {Fore.GREEN}- show <pid>                             {Fore.WHITE}: Show details of the process with the given PID.
@@ -408,6 +458,7 @@ def wait_process(pid):
 
 def main():
     run_sched_pattern = re.compile(r"^(?:run_sched|rs)\s+([\w./]+)$")
+    cmp_sched_pattern = re.compile(r"^(?:cmp_sched|cs)\s+([\w./]+)$")
     generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
     show_pattern = re.compile(r"^show\s+(\d+)$")
@@ -431,7 +482,13 @@ def main():
             match = run_sched_pattern.match(user_input)
             if match:
                 file_path = match.group(1)
-                run_process_schedule(file_path)
+                run_schedule(file_path)
+                continue
+
+            match = cmp_sched_pattern.match(user_input)
+            if match:
+                file_path = match.group(1)
+                cmp_schedule(file_path)
                 continue
 
             match = generate_pattern.match(user_input)
