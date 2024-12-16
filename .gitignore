@@ -5,3 +5,5 @@ dump.txt
 .vscode/
 .idea/
 input*.txt
+build/
+dist/
