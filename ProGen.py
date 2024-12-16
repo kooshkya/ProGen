@@ -216,14 +216,31 @@ def run_schedule(file_path):
         print(f"{str(stats)}")
 
 
+def print_side_by_side(str1, str2, padding=4):
+    lines1 = str1.splitlines()
+    lines2 = str2.splitlines()
+
+    max_width_str1 = max(len(line) for line in lines1)
+
+    for line1, line2 in zip(lines1, lines2):
+        print(f"{line1.ljust(max_width_str1 + padding)}{line2}")
+
+    longer, remaining = (lines1, lines2) if len(lines1) > len(lines2) else (lines2, lines1)
+    for line in longer[len(remaining):]:
+        if longer is lines1:
+            print(line.ljust(max_width_str1 + padding))
+        else:
+            print(" " * (max_width_str1 + padding) + line)
+
+
 def cmp_schedule(file_path):
     scx_processes, scx_stats = run_experiment(file_path, override_keep_cfs=False, experiment_name="SCX")
-    if scx_stats:
-        print(f"{str(scx_stats)}")
+    # if scx_stats:
+        # print(f"{str(scx_stats)}")
     other_processes, other_stats = run_experiment(file_path, override_keep_cfs=True, experiment_name="OTHER")
-    if other_stats:
-        print(f"{str(other_stats)}")
-
+    # if other_stats:
+        # print(f"{str(other_stats)}")
+    print_side_by_side(str(scx_stats), str(other_stats), 8)
 
 def run_experiment(file_path, override_keep_cfs=None, experiment_name=None):
     processes = parse_file(file_path, override_keep_cfs)
