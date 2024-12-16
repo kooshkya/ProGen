@@ -37,7 +37,8 @@ class MinionProcess:
         self.run_stop_str_separated_intervals = [str(x) for x in self.run_stop_separated_intervals]
 
         self.pid = -1
-        self.start_time = -1
+        self.start_time = -1    # monotonic time when run() was called for this
+        self.cpu_start_time = None  # monotonic time when child started executing on a CPU
         self.start_delay = 0
         self.end_time = -1
         self.end_status = None
@@ -50,19 +51,50 @@ class MinionProcess:
         self.turnaround_time = None
         self.cpu_time = None
         self.off_cpu_time = None
+        self.response_time = None
 
     def run(self):
         try:
+            # TODO: should this be here?
             self.start_time = time.monotonic()
+            r_fd, w_fd = os.pipe()
+
             pid = os.fork()
+
+            noise_start = time.process_time()
             if pid == 0:
-                param = os.sched_param(0)
+                cpu_start = time.monotonic()
+
                 if not self.keep_cfs:
+                    param = os.sched_param(0)
                     os.sched_setscheduler(0, SCHED_EXT, param)
+
+                    # process might keep running on previous CPU after changing class. 
+                    # make sure it is scheduled using sched-ext
+                    os.sched_yield()    
+                    # CPU-Start is when the sched-ext scheduler gives a CPU to the process
+                    cpu_start = time.monotonic()
+                    noise_start = time.process_time()
                 if self.affinity:
                     os.sched_setaffinity(0, self.affinity)
-                os.execl("./a.out", "./a.out", *self.run_stop_str_separated_intervals)
+                    # changing affinity usually reschedules the task,
+                    # so set cpu_start and noise_start to count from here
+                    noise_start = time.process_time()
+                    cpu_start = time.monotonic()
+                
+                # tell parent when child got first CPU time
+                os.close(r_fd)
+                os.write(w_fd, str(cpu_start).encode())
+                os.close(w_fd)
+                
+                # This determines how long python used CPU time for this child. The busyloop period of minion is adjusted to offset this.
+                noise_duration = time.process_time() - noise_start
+
+                os.execl("./a.out", "./a.out", str(noise_duration), *self.run_stop_str_separated_intervals)
             else:
+                os.close(w_fd)
+                self.cpu_start_time = float(os.read(r_fd, 1024).decode())
+                os.close(r_fd)
                 self.pid = pid
                 self.waiter_thread = threading.Thread(target=wait_on_child, args=(self,))
                 self.waiter_thread.start()
@@ -73,6 +105,7 @@ class MinionProcess:
         self.turnaround_time = self.end_time - self.start_time
         self.cpu_time = self.rusage.ru_utime + self.rusage.ru_stime
         self.off_cpu_time = self.turnaround_time - self.cpu_time
+        self.response_time = self.cpu_start_time - self.start_time
 
     def __str__(self):
             scheduled_time_str = f"{Fore.CYAN}Scheduled Start Time:{Style.RESET_ALL} {self.scheduled_start_time:.6f} sec"
@@ -81,6 +114,7 @@ class MinionProcess:
             start_delay_str = f"{Fore.YELLOW}Start Delay:{Style.RESET_ALL} {self.start_delay if self.start_delay else 'Not started yet'}"
             start_time_str = f"{Fore.YELLOW}Start Time:{Style.RESET_ALL} {self.start_time if self.start_time != -1 else 'Not started yet'}"
             end_time_str = f"{Fore.YELLOW}End Time:{Style.RESET_ALL} {self.end_time if self.end_time != -1 else 'Not finished yet'}"
+            response_time_str = f"{Fore.YELLOW}Response Time:{Style.RESET_ALL} {self.response_time if self.response_time else 'Not finished yet'}"
             turnaround_time_str = f"{Fore.YELLOW}Turnaround Time:{Style.RESET_ALL} {self.turnaround_time if self.turnaround_time else 'Not finished yet'}"
             cpu_time_str = f"{Fore.YELLOW}CPU Time:{Style.RESET_ALL} {self.cpu_time if self.cpu_time else 'Not finished yet'}"
             off_cpu_time_str = f"{Fore.YELLOW}Off-CPU Time:{Style.RESET_ALL} {self.off_cpu_time if self.off_cpu_time else 'Not finished yet'}"
@@ -92,6 +126,7 @@ class MinionProcess:
 {start_delay_str}
 {start_time_str}
 {end_time_str}
+{response_time_str}
 {turnaround_time_str}
 {cpu_time_str}
 {off_cpu_time_str}
@@ -169,12 +204,14 @@ def print_stats(processes: list[MinionProcess], experiment_start, experiment_end
     avg_off_cpu_time = total_off_cpu_time / process_count
     experiment_duration = experiment_end - experiment_start
     throughput = process_count / experiment_duration
+    avg_response_time = sum(x.response_time for x in processes) / process_count
     avg_turnaround_time = sum(x.turnaround_time for x in processes) / process_count
     print(f"{Fore.GREEN}Experiment Duration:{Style.RESET_ALL}  {experiment_duration:.6f} s")
     print(f"{Fore.GREEN}Total CPU Time:{Style.RESET_ALL}  {total_cpu_time:.6f} s")
     print(f"{Fore.GREEN}Total Off-CPU Time:{Style.RESET_ALL}  {total_off_cpu_time:.6f} s")
     print(f"{Fore.GREEN}Average Off-CPU time:{Style.RESET_ALL}  {avg_off_cpu_time:.6f} s")
     print(f"{Fore.GREEN}Throughput:{Style.RESET_ALL}  {throughput:.6f} procs/s")
+    print(f"{Fore.GREEN}Average Response Time:{Style.RESET_ALL}  {avg_response_time:.6f} s")
     print(f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL}  {avg_turnaround_time:.6f} s")
 
 
