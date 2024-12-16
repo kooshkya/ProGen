@@ -52,7 +52,16 @@ class MinionProcess:
         self.cpu_time = None
         self.off_cpu_time = None
         self.response_time = None
+        self.slowdown = None
         self.__stats_calculated = False
+
+    def calculate_stats(self):
+        self.__stats_calculated = True
+        self.turnaround_time = self.end_time - self.start_time
+        self.cpu_time = self.rusage.ru_utime + self.rusage.ru_stime
+        self.off_cpu_time = self.turnaround_time - self.cpu_time
+        self.response_time = self.cpu_start_time - self.start_time
+        self.slowdown = self.turnaround_time / self.cpu_time
 
     def run(self):
         try:
@@ -102,13 +111,6 @@ class MinionProcess:
         except OSError as e:
             print(f"Fork failed: {e}")
 
-    def calculate_stats(self):
-        self.__stats_calculated = True
-        self.turnaround_time = self.end_time - self.start_time
-        self.cpu_time = self.rusage.ru_utime + self.rusage.ru_stime
-        self.off_cpu_time = self.turnaround_time - self.cpu_time
-        self.response_time = self.cpu_start_time - self.start_time
-
     def is_finished(self):
         return bool(self.__stats_calculated)
 
@@ -121,6 +123,7 @@ class MinionProcess:
             end_time_str = f"{Fore.YELLOW}End Time:{Style.RESET_ALL} {self.end_time if self.end_time != -1 else 'Not finished yet'}"
             response_time_str = f"{Fore.YELLOW}Response Time:{Style.RESET_ALL} {self.response_time if self.response_time else 'Not finished yet'}"
             turnaround_time_str = f"{Fore.YELLOW}Turnaround Time:{Style.RESET_ALL} {self.turnaround_time if self.turnaround_time else 'Not finished yet'}"
+            slowdown_str = f"{Fore.YELLOW}Turnaround Time:{Style.RESET_ALL} {self.slowdown if self.slowdown else 'Not finished yet'}"
             cpu_time_str = f"{Fore.YELLOW}CPU Time:{Style.RESET_ALL} {self.cpu_time if self.cpu_time else 'Not finished yet'}"
             off_cpu_time_str = f"{Fore.YELLOW}Off-CPU Time:{Style.RESET_ALL} {self.off_cpu_time if self.off_cpu_time else 'Not finished yet'}"
             end_status_str = f"{Fore.YELLOW}End Status:{Style.RESET_ALL} {self.end_status if self.end_status is not None else 'Not finished yet'}"
@@ -133,6 +136,7 @@ class MinionProcess:
 {end_time_str}
 {response_time_str}
 {turnaround_time_str}
+{slowdown_str}
 {cpu_time_str}
 {off_cpu_time_str}
 {end_status_str}
@@ -154,6 +158,7 @@ class ExperimentStats:
         self.throughput = self.process_count / self.experiment_duration
         self.avg_response_time = sum(x.response_time for x in processes) / self.process_count
         self.avg_turnaround_time = sum(x.turnaround_time for x in processes) / self.process_count
+        self.avg_slowdown = sum(x.slowdown for x in processes) / self.process_count
         self.experiment_name = experiment_name or "No Name"
     
     def __str__(self):
@@ -166,7 +171,8 @@ class ExperimentStats:
             f"{Fore.GREEN}Average Off-CPU time:{Style.RESET_ALL} {self.avg_off_cpu_time:.6f} s\n"
             f"{Fore.GREEN}Throughput:{Style.RESET_ALL} {self.throughput:.6f} procs/s\n"
             f"{Fore.GREEN}Average Response Time:{Style.RESET_ALL} {self.avg_response_time:.6f} s\n"
-            f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL} {self.avg_turnaround_time:.6f} s"
+            f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL} {self.avg_turnaround_time:.6f} s\n"
+            f"{Fore.GREEN}Average Slowdown:{Style.RESET_ALL} {self.avg_slowdown:.4f}"
         )        
 
 
