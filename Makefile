@@ -1,10 +1,13 @@
-# Define variables
 PYTHON_CMD = python3
 VENV_DIR = venv
 REQUIREMENTS = requirements.txt
 MINION_C_SOURCE = minion.c
 MINION_OUTPUT = a.out
 PROGEN_PY = ProGen.py
+PYINSTALLER = pyinstaller
+DIST_DIR = dist
+BUILD_DIR = build
+COMPILED_PROGEN = ProGen
 
 # Ensure Python >= 3.9 is installed
 check_python:
@@ -69,15 +72,26 @@ run_progen: install_requirements compile_minion
 	@echo "Running $(PROGEN_PY) using virtual environment..."
 	@$(VENV_DIR)/bin/python $(PROGEN_PY)
 
+compile_progen: install_requirements compile_minion
+	@echo "Compiling $(PROGEN_PY) using pyinstaller..."
+	@$(PYINSTALLER) --onefile $(PROGEN_PY)
+
+run_compiled_progen: compile_progen
+	@$(DIST_DIR)/$(COMPILED_PROGEN)
+
 # Clean up the environment
 clean:
 	@echo "Cleaning up..."
 	@rm -rf $(VENV_DIR)
 	@rm -f $(MINION_OUTPUT)
+	@rm -rf $(DIST_DIR)
+	@rm -rf $(BUILD_DIR)
 	@echo "Clean up complete."
 
 # Default target
 all: run_progen
+
+compiled: run_compiled_progen
 
 .DEFAULT_GOAL := all
 
