@@ -47,7 +47,7 @@ class MinionProcess:
         self.rusage = None
 
         # calculated stats
-        self.life_duration = None
+        self.turnaround_time = None
         self.cpu_time = None
         self.off_cpu_time = None
 
@@ -70,9 +70,9 @@ class MinionProcess:
             print(f"Fork failed: {e}")
 
     def calculate_stats(self):
-        self.life_duration = self.end_time - self.start_time
+        self.turnaround_time = self.end_time - self.start_time
         self.cpu_time = self.rusage.ru_utime + self.rusage.ru_stime
-        self.off_cpu_time = self.life_duration - self.cpu_time
+        self.off_cpu_time = self.turnaround_time - self.cpu_time
 
     def __str__(self):
             scheduled_time_str = f"{Fore.CYAN}Scheduled Start Time:{Style.RESET_ALL} {self.scheduled_start_time:.6f} sec"
@@ -81,7 +81,7 @@ class MinionProcess:
             start_delay_str = f"{Fore.YELLOW}Start Delay:{Style.RESET_ALL} {self.start_delay if self.start_delay else 'Not started yet'}"
             start_time_str = f"{Fore.YELLOW}Start Time:{Style.RESET_ALL} {self.start_time if self.start_time != -1 else 'Not started yet'}"
             end_time_str = f"{Fore.YELLOW}End Time:{Style.RESET_ALL} {self.end_time if self.end_time != -1 else 'Not finished yet'}"
-            duration_str = f"{Fore.YELLOW}Duration:{Style.RESET_ALL} {self.life_duration if self.life_duration else 'Not finished yet'}"
+            turnaround_time_str = f"{Fore.YELLOW}Turnaround Time:{Style.RESET_ALL} {self.turnaround_time if self.turnaround_time else 'Not finished yet'}"
             cpu_time_str = f"{Fore.YELLOW}CPU Time:{Style.RESET_ALL} {self.cpu_time if self.cpu_time else 'Not finished yet'}"
             off_cpu_time_str = f"{Fore.YELLOW}Off-CPU Time:{Style.RESET_ALL} {self.off_cpu_time if self.off_cpu_time else 'Not finished yet'}"
             end_status_str = f"{Fore.YELLOW}End Status:{Style.RESET_ALL} {self.end_status if self.end_status is not None else 'Not finished yet'}"
@@ -92,7 +92,7 @@ class MinionProcess:
 {start_delay_str}
 {start_time_str}
 {end_time_str}
-{duration_str}
+{turnaround_time_str}
 {cpu_time_str}
 {off_cpu_time_str}
 {end_status_str}
@@ -120,18 +120,25 @@ def run_process_schedule(file_path):
     print(f"started at {start} ended at {end} total {end - start:.6f} seconds")
     for i, p in enumerate(processes):
         print(f"{i}:\n{str(p)}")
-    print_stats(processes)
+    print_stats(processes, start, end)
 
 
-def print_stats(processes: list[MinionProcess]):
+def print_stats(processes: list[MinionProcess], experiment_start, experiment_end):
+    process_count = len(processes)
     off_cpu_times = sorted([x.off_cpu_time for x in processes])
-    print(f"off_cpu times {", ".join(f"{x:.3f}" for x in off_cpu_times)}")
     total_off_cpu_time = sum(off_cpu_times)
     total_cpu_time = sum(x.cpu_time for x in processes)
-    avg_off_cpu_time = total_off_cpu_time / len(processes)
-    print(f"{Fore.GREEN}total cpu time:{Style.RESET_ALL}  {total_cpu_time}")
-    print(f"{Fore.GREEN}total off-cpu time:{Style.RESET_ALL}  {total_off_cpu_time}")
-    print(f"{Fore.GREEN}average off-cpu time:{Style.RESET_ALL}  {avg_off_cpu_time}")
+    avg_off_cpu_time = total_off_cpu_time / process_count
+    experiment_duration = experiment_end - experiment_start
+    throughput = process_count / experiment_duration
+    avg_turnaround_time = sum(x.turnaround_time for x in processes) / process_count
+    print(f"{Fore.GREEN}Experiment Duration:{Style.RESET_ALL}  {experiment_duration:.6f} s")
+    print(f"{Fore.GREEN}Total CPU Time:{Style.RESET_ALL}  {total_cpu_time:.6f} s")
+    print(f"{Fore.GREEN}Total Off-CPU Time:{Style.RESET_ALL}  {total_off_cpu_time:.6f} s")
+    print(f"{Fore.GREEN}Average Off-CPU time:{Style.RESET_ALL}  {avg_off_cpu_time:.6f} s")
+    print(f"{Fore.GREEN}Throughput:{Style.RESET_ALL}  {throughput:.6f} procs/s")
+    print(f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL}  {avg_turnaround_time:.6f} s")
+
 
 def parse_file(file_path):
     if not os.path.exists(file_path):
