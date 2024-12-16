@@ -97,6 +97,7 @@ class MinionProcess:
 {off_cpu_time_str}
 {end_status_str}
 """
+    
 
 def wait_on_child(minion: MinionProcess):
     pid, status, rusage = os.wait4(minion.pid, 0)
@@ -106,38 +107,6 @@ def wait_on_child(minion: MinionProcess):
         minion.end_time = now
         minion.rusage = rusage
         minion.calculate_stats()
-        
-
-def run_process_schedule(file_path):
-    processes = parse_file(file_path)
-    if not processes:
-        return
-    start = do_run_processes(proc_list=processes)
-    for p in processes:
-        p.start_delay = p.scheduled_start_time + start - p.start_time
-        p.waiter_thread.join(timeout=None)
-    end = time.monotonic()
-    print(f"started at {start} ended at {end} total {end - start:.6f} seconds")
-    for i, p in enumerate(processes):
-        print(f"{i}:\n{str(p)}")
-    print_stats(processes, start, end)
-
-
-def print_stats(processes: list[MinionProcess], experiment_start, experiment_end):
-    process_count = len(processes)
-    off_cpu_times = sorted([x.off_cpu_time for x in processes])
-    total_off_cpu_time = sum(off_cpu_times)
-    total_cpu_time = sum(x.cpu_time for x in processes)
-    avg_off_cpu_time = total_off_cpu_time / process_count
-    experiment_duration = experiment_end - experiment_start
-    throughput = process_count / experiment_duration
-    avg_turnaround_time = sum(x.turnaround_time for x in processes) / process_count
-    print(f"{Fore.GREEN}Experiment Duration:{Style.RESET_ALL}  {experiment_duration:.6f} s")
-    print(f"{Fore.GREEN}Total CPU Time:{Style.RESET_ALL}  {total_cpu_time:.6f} s")
-    print(f"{Fore.GREEN}Total Off-CPU Time:{Style.RESET_ALL}  {total_off_cpu_time:.6f} s")
-    print(f"{Fore.GREEN}Average Off-CPU time:{Style.RESET_ALL}  {avg_off_cpu_time:.6f} s")
-    print(f"{Fore.GREEN}Throughput:{Style.RESET_ALL}  {throughput:.6f} procs/s")
-    print(f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL}  {avg_turnaround_time:.6f} s")
 
 
 def parse_file(file_path):
@@ -166,6 +135,21 @@ def parse_file(file_path):
         return processes
 
 
+def run_process_schedule(file_path):
+    processes = parse_file(file_path)
+    if not processes:
+        return
+    start = do_run_processes(proc_list=processes)
+    for p in processes:
+        p.start_delay = p.scheduled_start_time + start - p.start_time
+        p.waiter_thread.join(timeout=None)
+    end = time.monotonic()
+    print(f"started at {start} ended at {end} total {end - start:.6f} seconds")
+    for i, p in enumerate(processes):
+        print(f"{i}:\n{str(p)}")
+    print_stats(processes, start, end)
+
+
 def do_run_processes(proc_list: list[MinionProcess]):
     start = time.monotonic()
     cursor = 0
@@ -175,6 +159,24 @@ def do_run_processes(proc_list: list[MinionProcess]):
             proc_list[cursor].run()
             cursor += 1
     return start
+
+
+def print_stats(processes: list[MinionProcess], experiment_start, experiment_end):
+    process_count = len(processes)
+    off_cpu_times = sorted([x.off_cpu_time for x in processes])
+    total_off_cpu_time = sum(off_cpu_times)
+    total_cpu_time = sum(x.cpu_time for x in processes)
+    avg_off_cpu_time = total_off_cpu_time / process_count
+    experiment_duration = experiment_end - experiment_start
+    throughput = process_count / experiment_duration
+    avg_turnaround_time = sum(x.turnaround_time for x in processes) / process_count
+    print(f"{Fore.GREEN}Experiment Duration:{Style.RESET_ALL}  {experiment_duration:.6f} s")
+    print(f"{Fore.GREEN}Total CPU Time:{Style.RESET_ALL}  {total_cpu_time:.6f} s")
+    print(f"{Fore.GREEN}Total Off-CPU Time:{Style.RESET_ALL}  {total_off_cpu_time:.6f} s")
+    print(f"{Fore.GREEN}Average Off-CPU time:{Style.RESET_ALL}  {avg_off_cpu_time:.6f} s")
+    print(f"{Fore.GREEN}Throughput:{Style.RESET_ALL}  {throughput:.6f} procs/s")
+    print(f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL}  {avg_turnaround_time:.6f} s")
+
 
 def process_details(pid):
     if pid in processes:
