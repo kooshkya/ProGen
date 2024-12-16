@@ -86,6 +86,7 @@ clean:
 	@rm -f $(MINION_OUTPUT)
 	@rm -rf $(DIST_DIR)
 	@rm -rf $(BUILD_DIR)
+	@rm ProGen.spec
 	@echo "Clean up complete."
 
 # Default target
