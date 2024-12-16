@@ -1,9 +1,10 @@
 *.out
 venv/
-dump.txt
 *.o
 .vscode/
 .idea/
-input*.txt
+experiment_configs/
 build/
 dist/
+ignored_helpers/
+*.spec
