@@ -9,6 +9,9 @@ import signal
 import threading
 from colorama import Fore, Style, init
 from multiprocessing import shared_memory
+import statistics
+import math
+
 
 processes = {}
 SCHED_EXT = 7
@@ -74,7 +77,6 @@ class MinionProcess:
             noise_start = time.process_time()
             if pid == 0:
                 cpu_start = time.monotonic()
-
                 if not self.keep_cfs:
                     param = os.sched_param(0)
                     os.sched_setscheduler(0, SCHED_EXT, param)
@@ -99,7 +101,6 @@ class MinionProcess:
                 
                 # This determines how long python used CPU time for this child. The busyloop period of minion is adjusted to offset this.
                 noise_duration = time.process_time() - noise_start
-
                 os.execl("./a.out", "./a.out", str(noise_duration), *self.run_stop_str_separated_intervals)
             else:
                 os.close(w_fd)
@@ -126,6 +127,8 @@ class MinionProcess:
             slowdown_str = f"{Fore.YELLOW}Turnaround Time:{Style.RESET_ALL} {self.slowdown if self.slowdown else 'Not finished yet'}"
             cpu_time_str = f"{Fore.YELLOW}CPU Time:{Style.RESET_ALL} {self.cpu_time if self.cpu_time else 'Not finished yet'}"
             off_cpu_time_str = f"{Fore.YELLOW}Off-CPU Time:{Style.RESET_ALL} {self.off_cpu_time if self.off_cpu_time else 'Not finished yet'}"
+            vol_ctx_switch_count_str = f"{Fore.YELLOW}Voluntary CTX Switch Count:{Style.RESET_ALL} {self.rusage.ru_nvcsw if self.rusage is not None else 'Not finished yet'}"
+            invol_ctx_switch_count_str = f"{Fore.YELLOW}Inoluntary CTX Switch Count:{Style.RESET_ALL} {self.rusage.ru_nivcsw if self.rusage is not None else 'Not finished yet'}"
             end_status_str = f"{Fore.YELLOW}End Status:{Style.RESET_ALL} {self.end_status if self.end_status is not None else 'Not finished yet'}"
             
             return f"""{scheduled_time_str}
@@ -139,10 +142,23 @@ class MinionProcess:
 {slowdown_str}
 {cpu_time_str}
 {off_cpu_time_str}
+{vol_ctx_switch_count_str}
+{invol_ctx_switch_count_str}
 {end_status_str}
 """
     
 
+
+def wait_on_child(minion: MinionProcess):
+    pid, status, rusage = os.wait4(minion.pid, 0)
+    now = time.monotonic()
+    if pid == minion.pid:
+        minion.end_status = status
+        minion.end_time = now
+        minion.rusage = rusage
+        minion.calculate_stats()
+
+    
 class ExperimentStats:
     def __init__(self, processes: list[MinionProcess], experiment_start, experiment_end, cpu_utilization_percentages, experiment_name=None):
         if(any(not p.is_finished for p in processes)):
@@ -161,6 +177,9 @@ class ExperimentStats:
         self.avg_slowdown = sum(x.slowdown for x in processes) / self.process_count
         self.experiment_name = experiment_name or "No Name"
         self.cpu_utilization_percentages = cpu_utilization_percentages
+        self.cpu_utilization_variance = statistics.variance(self.cpu_utilization_percentages)
+        self.vol_context_switch_count = sum(x.rusage.ru_nvcsw for x in processes)
+        self.invol_context_switch_count = sum(x.rusage.ru_nivcsw for x in processes)
     
     def __str__(self):
         return (
@@ -175,17 +194,11 @@ class ExperimentStats:
             f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL} {self.avg_turnaround_time:.6f} s\n"
             f"{Fore.GREEN}Average Slowdown:{Style.RESET_ALL} {self.avg_slowdown:.4f}\n"
             f"{Fore.GREEN}CPU Utilizations:\n{Style.RESET_ALL}{"\n".join(f'{i}: {x:.3f}%' for i, x in enumerate(self.cpu_utilization_percentages))}\n"
+            f"{Fore.GREEN}CPU Utilization Variance:{Style.RESET_ALL} {self.cpu_utilization_variance:.3f}%\n"
+            f"{Fore.GREEN}CPU Utilization STD:{Style.RESET_ALL} {math.sqrt(self.cpu_utilization_variance):.3f}%\n"
+            f"{Fore.GREEN}Total Voluntary CTX Switches:{Style.RESET_ALL} {self.vol_context_switch_count} avg {self.vol_context_switch_count / self.process_count:.2f}\n"
+            f"{Fore.GREEN}Total Inoluntary CTX Switches:{Style.RESET_ALL} {self.invol_context_switch_count} avg {self.invol_context_switch_count / self.process_count:.2f}\n"
         )        
-
-
-def wait_on_child(minion: MinionProcess):
-    pid, status, rusage = os.wait4(minion.pid, 0)
-    now = time.monotonic()
-    if pid == minion.pid:
-        minion.end_status = status
-        minion.end_time = now
-        minion.rusage = rusage
-        minion.calculate_stats()
 
 
 def parse_file(file_path, override_keep_cfs=None):
@@ -222,7 +235,10 @@ def run_schedule(file_path):
     processes, stats = run_experiment(file_path)
     if stats:
         print(f"{str(stats)}")
-
+    
+    print(f"Process Stats:")
+    for p in processes:
+        print(f"{str(p)}")
 
 def print_side_by_side(str1, str2, padding=4):
     lines1 = str1.splitlines()
