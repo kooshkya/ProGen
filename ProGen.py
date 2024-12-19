@@ -144,7 +144,7 @@ class MinionProcess:
     
 
 class ExperimentStats:
-    def __init__(self, processes: list[MinionProcess], experiment_start, experiment_end, experiment_name=None):
+    def __init__(self, processes: list[MinionProcess], experiment_start, experiment_end, cpu_utilization_percentages, experiment_name=None):
         if(any(not p.is_finished for p in processes)):
             raise Exception("processes need to be finished")
         self.experiment_end = experiment_end
@@ -160,6 +160,7 @@ class ExperimentStats:
         self.avg_turnaround_time = sum(x.turnaround_time for x in processes) / self.process_count
         self.avg_slowdown = sum(x.slowdown for x in processes) / self.process_count
         self.experiment_name = experiment_name or "No Name"
+        self.cpu_utilization_percentages = cpu_utilization_percentages
     
     def __str__(self):
         return (
@@ -172,7 +173,8 @@ class ExperimentStats:
             f"{Fore.GREEN}Throughput:{Style.RESET_ALL} {self.throughput:.6f} procs/s\n"
             f"{Fore.GREEN}Average Response Time:{Style.RESET_ALL} {self.avg_response_time:.6f} s\n"
             f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL} {self.avg_turnaround_time:.6f} s\n"
-            f"{Fore.GREEN}Average Slowdown:{Style.RESET_ALL} {self.avg_slowdown:.4f}"
+            f"{Fore.GREEN}Average Slowdown:{Style.RESET_ALL} {self.avg_slowdown:.4f}\n"
+            f"{Fore.GREEN}CPU Utilizations:\n{Style.RESET_ALL}{"\n".join(f'{i}: {x:.3f}%' for i, x in enumerate(self.cpu_utilization_percentages))}\n"
         )        
 
 
@@ -248,17 +250,20 @@ def cmp_schedule(file_path):
         # print(f"{str(other_stats)}")
     print_side_by_side(str(scx_stats), str(other_stats), 8)
 
+
 def run_experiment(file_path, override_keep_cfs=None, experiment_name=None):
     processes = parse_file(file_path, override_keep_cfs)
     if not processes:
         print(f"{Fore.RED}Could not parse file")
         return None, None
+    psutil.cpu_percent(interval=None, percpu=True)
     start = do_run_processes(proc_list=processes)
     for p in processes:
         p.start_delay = p.scheduled_start_time + start - p.start_time
         p.waiter_thread.join(timeout=None)
     end = time.monotonic()
-    stats = ExperimentStats(processes, start, end, experiment_name)
+    cpu_utilization_percentages = psutil.cpu_percent(interval=None, percpu=True)
+    stats = ExperimentStats(processes, start, end, cpu_utilization_percentages, experiment_name)
     return processes, stats
 
 
