@@ -4,6 +4,7 @@ venv/
 .vscode/
 .idea/
 experiment_configs/
+experiment_logs/
 build/
 dist/
 ignored_helpers/

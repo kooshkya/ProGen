@@ -7,6 +7,7 @@ import time
 import re
 import signal
 import threading
+import datetime
 from colorama import Fore, Style, init
 from multiprocessing import shared_memory
 import statistics
@@ -160,7 +161,7 @@ def wait_on_child(minion: MinionProcess):
 
     
 class ExperimentStats:
-    def __init__(self, processes: list[MinionProcess], experiment_start, experiment_end, cpu_utilization_percentages, experiment_name=None):
+    def __init__(self, processes: list[MinionProcess], experiment_start, experiment_end, cpu_utilization_percentages, experiment_name=None, cpu_count=4):
         if(any(not p.is_finished for p in processes)):
             raise Exception("processes need to be finished")
         self.experiment_end = experiment_end
@@ -176,7 +177,8 @@ class ExperimentStats:
         self.avg_turnaround_time = sum(x.turnaround_time for x in processes) / self.process_count
         self.avg_slowdown = sum(x.slowdown for x in processes) / self.process_count
         self.experiment_name = experiment_name or "No Name"
-        self.cpu_utilization_percentages = cpu_utilization_percentages
+        self.cpu_utilization_percentages = cpu_utilization_percentages[:cpu_count]
+        self.cpu_utilization_avg = sum(self.cpu_utilization_percentages) / len(self.cpu_utilization_percentages)
         self.cpu_utilization_variance = statistics.variance(self.cpu_utilization_percentages)
         self.vol_context_switch_count = sum(x.rusage.ru_nvcsw for x in processes)
         self.invol_context_switch_count = sum(x.rusage.ru_nivcsw for x in processes)
@@ -194,6 +196,7 @@ class ExperimentStats:
             f"{Fore.GREEN}Average Turnaround Time:{Style.RESET_ALL} {self.avg_turnaround_time:.6f} s\n"
             f"{Fore.GREEN}Average Slowdown:{Style.RESET_ALL} {self.avg_slowdown:.4f}\n"
             f"{Fore.GREEN}CPU Utilizations:\n{Style.RESET_ALL}{"\n".join(f'{i}: {x:.3f}%' for i, x in enumerate(self.cpu_utilization_percentages))}\n"
+            f"{Fore.GREEN}CPU Utilization Average:{Style.RESET_ALL} {self.cpu_utilization_avg:.3f}%\n"
             f"{Fore.GREEN}CPU Utilization Variance:{Style.RESET_ALL} {self.cpu_utilization_variance:.3f}%\n"
             f"{Fore.GREEN}CPU Utilization STD:{Style.RESET_ALL} {math.sqrt(self.cpu_utilization_variance):.3f}%\n"
             f"{Fore.GREEN}Total Voluntary CTX Switches:{Style.RESET_ALL} {self.vol_context_switch_count} avg {self.vol_context_switch_count / self.process_count:.2f}\n"
@@ -231,6 +234,26 @@ def parse_file(file_path, override_keep_cfs=None):
         return processes
 
 
+def remove_color_codes(s):
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*[mG]')
+    return ansi_escape.sub('', s)
+
+
+def create_experiment_log(file_name: str, exp_stats: ExperimentStats, processes: list[MinionProcess]):
+    dir_name = "experiment_logs"
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_file_name = f"log_{file_name.split("/")[-1]}_{exp_stats.experiment_name}_{timestamp}.txt"
+    log_file_path = os.path.join(dir_name, log_file_name)
+    with open(log_file_path, 'w') as log_file:
+        log_file.write(f"File: {file_name}\n\n")
+        log_file.write(remove_color_codes(str(exp_stats)))
+        log_file.write("\n")
+        log_file.write("\n".join(remove_color_codes(str(p)) for p in processes))
+
+
 def run_schedule(file_path):
     processes, stats = run_experiment(file_path)
     if stats:
@@ -239,6 +262,9 @@ def run_schedule(file_path):
     print(f"Process Stats:")
     for p in processes:
         print(f"{str(p)}")
+
+    create_experiment_log(file_path, stats, processes)
+
 
 def print_side_by_side(str1, str2, padding=4):
     lines1 = str1.splitlines()
@@ -259,12 +285,10 @@ def print_side_by_side(str1, str2, padding=4):
 
 def cmp_schedule(file_path):
     scx_processes, scx_stats = run_experiment(file_path, override_keep_cfs=False, experiment_name="SCX")
-    # if scx_stats:
-        # print(f"{str(scx_stats)}")
     other_processes, other_stats = run_experiment(file_path, override_keep_cfs=True, experiment_name="OTHER")
-    # if other_stats:
-        # print(f"{str(other_stats)}")
     print_side_by_side(str(scx_stats), str(other_stats), 8)
+    create_experiment_log(file_path, scx_stats, scx_processes)
+    create_experiment_log(file_path, other_stats, other_processes)
 
 
 def run_experiment(file_path, override_keep_cfs=None, experiment_name=None):
