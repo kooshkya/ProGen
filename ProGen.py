@@ -400,8 +400,8 @@ def set_affinity(pid, cpus):
         print(f"No process found with PID {pid}.")
 
 
-def spawn_process(timeout: int=None, set_sched_class: bool=True):
-    command = ['./a.out'] if not timeout else ['./a.out', str(timeout)]
+def spawn_process(set_sched_class: bool=True):
+    command = ['./b.out']
     master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(command, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd)
     pid = process.pid
@@ -527,7 +527,7 @@ def wait_process(pid):
 def main():
     run_sched_pattern = re.compile(r"^(?:run_sched|rs)\s+([\w./]+)$")
     cmp_sched_pattern = re.compile(r"^(?:cmp_sched|cs)\s+([\w./]+)$")
-    generate_pattern = re.compile(r"^generate(?:\s+(\d+))?(?:\s+no-class)?$")
+    generate_pattern = re.compile(r"^generate(?:\s+no-class)?$")
     terminal_pattern = re.compile(r"^terminal\s+(\d+)$")
     show_pattern = re.compile(r"^show\s+(\d+)$")
     change_sched_class_pattern = re.compile(r"^change_class\s+(\d+)$")
@@ -561,14 +561,8 @@ def main():
 
             match = generate_pattern.match(user_input)
             if match:
-                timeout = match.group(1)
                 no_class = "no-class" in user_input
-                if timeout:
-                    print(f"{Fore.GREEN}Spawning a process with timeout {timeout} seconds...")
-                    spawn_process(timeout=int(timeout), set_sched_class=not no_class)
-                else:
-                    print(f"{Fore.GREEN}Spawning a process with default timeout...")
-                    spawn_process(set_sched_class=not no_class)
+                spawn_process(set_sched_class=not no_class)
                 continue
 
             match = affinity_pattern.match(user_input)

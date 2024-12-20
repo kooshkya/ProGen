@@ -3,6 +3,8 @@ VENV_DIR = venv
 REQUIREMENTS = requirements.txt
 MINION_C_SOURCE = minion.c
 MINION_OUTPUT = a.out
+SIMPLE_MINION_C_SOURCE = simple_minion.c
+SIMPLE_MINION_OUTPUT = b.out
 PROGEN_PY = ProGen.py
 PYINSTALLER = pyinstaller
 DIST_DIR = dist
@@ -64,9 +66,10 @@ check_gcc:
 
 # Compile minion.c with GCC
 compile_minion: check_gcc
-	@echo "Compiling $(MINION_C_SOURCE)..."
+	@echo "Compiling $(MINION_C_SOURCE) $(SIMPLE_MINION_C_SOURCE)..."
 	@gcc $(MINION_C_SOURCE) -o $(MINION_OUTPUT)
-	@echo "Compilation completed: $(MINION_OUTPUT)"
+	@gcc $(SIMPLE_MINION_C_SOURCE) -o $(SIMPLE_MINION_OUTPUT)
+	@echo "Compilation completed: $(MINION_OUTPUT) $(SIMPLE_MINION_OUTPUT)"
 
 # Run ProGen.py using the virtual environment
 run_progen: install_requirements compile_minion
@@ -85,6 +88,7 @@ clean:
 	@echo "Cleaning up..."
 	@rm -rf $(VENV_DIR)
 	@rm -f $(MINION_OUTPUT)
+	@rm -f $(SIMPLE_MINION_OUTPUT)
 	@rm -rf $(DIST_DIR)
 	@rm -rf $(BUILD_DIR)
 	@rm -rf $(LOG_DIR)
