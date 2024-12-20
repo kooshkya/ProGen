@@ -7,6 +7,7 @@ PROGEN_PY = ProGen.py
 PYINSTALLER = pyinstaller
 DIST_DIR = dist
 BUILD_DIR = build
+LOG_DIR = experiment_logs
 COMPILED_PROGEN = ProGen
 
 # Ensure Python >= 3.9 is installed
@@ -86,6 +87,7 @@ clean:
 	@rm -f $(MINION_OUTPUT)
 	@rm -rf $(DIST_DIR)
 	@rm -rf $(BUILD_DIR)
+	@rm -rf $(LOG_DIR)
 	@rm ProGen.spec
 	@echo "Clean up complete."
 
